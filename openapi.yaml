@@ -1,0 +1,373 @@
+openapi: 3.1.0
+info:
+  title: BUILDYNOTE MCP REST API
+  description: BUILDYNOTEの仕事・工程・個人予定をAIエージェントから操作するRESTラッパー
+  version: 1.0.0
+servers:
+  - url: https://your-app.railway.app
+    description: 本番環境
+  - url: http://localhost:3000
+    description: ローカル開発
+
+security:
+  - ApiToken: []
+
+components:
+  securitySchemes:
+    ApiToken:
+      type: apiKey
+      in: header
+      name: X-Api-Token
+      description: BUILDYNOTEのAPIトークン（各ユーザーが自分のトークンを使用）
+  schemas:
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+        timestamp:
+          type: string
+          format: date-time
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+
+paths:
+  /health:
+    get:
+      summary: ヘルスチェック
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /works:
+    get:
+      summary: 仕事一覧取得
+      parameters:
+        - name: name
+          in: query
+          schema: { type: string }
+          description: 仕事名（部分一致）
+        - name: status
+          in: query
+          schema: { type: string }
+          description: ステータス（1=見込客, 2=受注, 3=完了）
+        - name: customer_id
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: 仕事一覧
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+        '401':
+          description: 認証エラー
+    post:
+      summary: 仕事作成
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, customer_id, construction_type_id, sales_staff_id]
+              properties:
+                name: { type: string, description: '仕事名' }
+                kana: { type: string, description: 'ふりがな' }
+                customer_id: { type: string }
+                construction_type_id: { type: string }
+                sales_staff_id: { type: string }
+                manager_id: { type: string }
+                overview: { type: string, description: '概要（GitLab URL等）' }
+                foreign_id: { type: string, description: '外部連携ID' }
+                status: { type: string, default: '1' }
+      responses:
+        '200':
+          description: 作成された仕事
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+  /works/{id}:
+    get:
+      summary: 仕事詳細取得
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 仕事詳細
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    put:
+      summary: 仕事編集
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                status: { type: string }
+                overview: { type: string }
+      responses:
+        '200':
+          description: 編集後の仕事
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    delete:
+      summary: 仕事削除
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 削除結果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+  /works/{work_id}/gantt:
+    get:
+      summary: 工程一覧取得
+      parameters:
+        - name: work_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 工程一覧
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    post:
+      summary: 工程作成
+      parameters:
+        - name: work_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, day_start, day_end]
+              properties:
+                name: { type: string }
+                category: { type: string, description: '1=社内/2=工事/3=納材/4=検査' }
+                day_start: { type: string, format: date }
+                day_end: { type: string, format: date }
+                industry_type_id: { type: string }
+                supplier_company_id: { type: string }
+                report_type: { type: string }
+      responses:
+        '200':
+          description: 作成された工程
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+  /works/{work_id}/gantt/{id}:
+    get:
+      summary: 工程詳細取得
+      parameters:
+        - name: work_id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 工程詳細
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    put:
+      summary: 工程編集
+      parameters:
+        - name: work_id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                day_start: { type: string, format: date }
+                day_end: { type: string, format: date }
+      responses:
+        '200':
+          description: 編集後の工程
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+  /schedules:
+    get:
+      summary: 個人予定一覧取得
+      parameters:
+        - name: start_date
+          in: query
+          schema: { type: string, format: date }
+        - name: end_date
+          in: query
+          schema: { type: string, format: date }
+        - name: work_id
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: 予定一覧
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    post:
+      summary: 個人予定作成
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, start_date, end_date]
+              properties:
+                name: { type: string }
+                start_date: { type: string, description: 'YYYY-MM-DD または YYYY-MM-DD HH:mm' }
+                end_date: { type: string }
+                user_list: { type: array, items: { type: string } }
+                work_id: { type: string }
+                is_private: { type: string, description: '0=公開, 1=非公開' }
+                label_id: { type: string }
+      responses:
+        '200':
+          description: 作成された予定
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+  /schedules/{id}:
+    get:
+      summary: 個人予定詳細取得
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 予定詳細
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    put:
+      summary: 個人予定編集
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                start_date: { type: string }
+                end_date: { type: string }
+      responses:
+        '200':
+          description: 編集後の予定
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    delete:
+      summary: 個人予定削除
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 削除結果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+  /masters/staff:
+    get:
+      summary: 社員一覧
+      responses:
+        '200':
+          description: 社員一覧
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+  /masters/construction-types:
+    get:
+      summary: 物件区分一覧
+      responses:
+        '200':
+          description: 物件区分一覧
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+  /masters/industry-types:
+    get:
+      summary: 業種区分一覧
+      responses:
+        '200':
+          description: 業種区分一覧
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }

@@ -1,0 +1,20 @@
+{
+  "name": "buildynote-mcp",
+  "version": "1.0.0",
+  "description": "BUILDYNOTE MCP Server + REST API Wrapper — AIエージェントからBUILDYNOTEを操作",
+  "main": "src/rest/server.js",
+  "scripts": {
+    "start": "node src/rest/server.js",
+    "start:mcp": "node src/mcp/server.js",
+    "dev": "node --watch src/rest/server.js",
+    "dev:mcp": "node --watch src/mcp/server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "express": "^4.19.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT"
+}
