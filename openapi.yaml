@@ -267,14 +267,14 @@ paths:
           required: true
           schema: { type: string }
           description: 取得対象のユーザーID（listStaffで取得可能）
-        - name: schedule_date
+        - name: start_date
           in: query
-          schema: { type: string, format: date }
-          description: 取得開始日（YYYY-MM-DD）
-        - name: schedule_end_date
+          schema: { type: string }
+          description: 取得開始日時（YYYY-MM-DD または YYYY-MM-DDTHH:mm:ss）
+        - name: end_date
           in: query
-          schema: { type: string, format: date }
-          description: 取得終了日（YYYY-MM-DD）。schedule_dateと合わせて範囲指定
+          schema: { type: string }
+          description: 取得終了日時（YYYY-MM-DD または YYYY-MM-DDTHH:mm:ss）。start_dateと合わせて範囲指定
         - name: work_id
           in: query
           schema: { type: string }
