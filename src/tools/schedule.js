@@ -1,7 +1,8 @@
 async function listSchedules(client, params = {}) {
   const p = {};
-  if (params.start_date) p.start_date = params.start_date;
-  if (params.end_date) p.end_date = params.end_date;
+  if (params.user_id) p.user_id = params.user_id;
+  if (params.schedule_date) p.schedule_date = params.schedule_date;
+  if (params.schedule_end_date) p.schedule_end_date = params.schedule_end_date;
   if (params.work_id) p.work_id = params.work_id;
   return client.call('schedule_list', p);
 }

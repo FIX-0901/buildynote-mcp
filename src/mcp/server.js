@@ -116,12 +116,14 @@ const TOOLS = [
   },
   {
     name: 'schedule_list',
-    description: '個人予定の一覧を取得する。期間・仕事IDで絞り込み可能。',
+    description: '個人予定の一覧を取得する。user_idは必須。先にmaster_staffで社員IDを取得してから呼ぶこと。',
     inputSchema: {
       type: 'object',
+      required: ['user_id'],
       properties: {
-        start_date: { type: 'string', description: '開始日（YYYY-MM-DD）' },
-        end_date: { type: 'string', description: '終了日（YYYY-MM-DD）' },
+        user_id: { type: 'string', description: '取得対象のユーザーID（master_staffで取得可能）' },
+        schedule_date: { type: 'string', description: '取得開始日（YYYY-MM-DD）' },
+        schedule_end_date: { type: 'string', description: '取得終了日（YYYY-MM-DD）。schedule_dateと合わせて範囲指定' },
         work_id: { type: 'string', description: '関連する仕事ID' },
       },
     },
