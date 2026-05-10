@@ -4,7 +4,7 @@ info:
   description: BUILDYNOTEの仕事・工程・個人予定をAIエージェントから操作するRESTラッパー
   version: 1.0.0
 servers:
-  - url: https://your-app.railway.app
+  - url: https://buildynote-mcp-production.up.railway.app
     description: 本番環境
   - url: http://localhost:3000
     description: ローカル開発
