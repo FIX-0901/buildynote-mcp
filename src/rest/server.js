@@ -72,7 +72,7 @@ app.delete('/works/:id', auth, async (req, res) => {
 
 // ----- 工程 -----
 app.get('/works/:work_id/gantt', auth, async (req, res) => {
-  try { ok(res, await gantt.listGantts(req.client, { work_id: req.params.work_id })); }
+  try { ok(res, await gantt.listGantts(req.client, { work_id: req.params.work_id, ...req.query })); }
   catch (e) { fail(res, 500, 'API_ERROR', e.message); }
 });
 
@@ -87,7 +87,7 @@ app.post('/works/:work_id/gantt', auth, async (req, res) => {
 });
 
 app.put('/works/:work_id/gantt/:id', auth, async (req, res) => {
-  try { ok(res, await gantt.editGantt(req.client, { gantt_id: req.params.id, ...req.body })); }
+  try { ok(res, await gantt.editGantt(req.client, { gantt_id: req.params.id, work_id: req.params.work_id, ...req.body })); }
   catch (e) { fail(res, 500, 'API_ERROR', e.message); }
 });
 
@@ -96,6 +96,7 @@ app.get('/schedules', auth, async (req, res) => {
   try { ok(res, await schedule.listSchedules(req.client, req.query)); }
   catch (e) { fail(res, 500, 'API_ERROR', e.message); }
 });
+
 
 app.get('/schedules/:id', auth, async (req, res) => {
   try { ok(res, await schedule.getSchedule(req.client, { schedule_id: req.params.id })); }
