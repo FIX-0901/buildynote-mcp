@@ -318,12 +318,14 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name, start_date, end_date]
+              required: [name, start_date, end_date, user_list]
               properties:
                 name: { type: string }
-                start_date: { type: string, description: 'YYYY-MM-DD または YYYY-MM-DD HH:mm' }
-                end_date: { type: string }
-                user_list: { type: array, items: { type: string } }
+                start_date: { type: string, description: '開始日（YYYY-MM-DD）' }
+                start_time: { type: string, description: '開始時刻（HH:mm）。省略可' }
+                end_date: { type: string, description: '終了日（YYYY-MM-DD）' }
+                end_time: { type: string, description: '終了時刻（HH:mm）。省略可' }
+                user_list: { type: array, items: { type: object, properties: { user_id: { type: string } } }, description: '参加者リスト（例: [{user_id: "277"}]）。削除したい場合はAPIユーザー({user_id: "8497"})も含める' }
                 work_id: { type: string }
                 is_private: { type: string, description: '0=公開, 1=非公開' }
                 label_id: { type: string }
@@ -364,8 +366,12 @@ paths:
               type: object
               properties:
                 name: { type: string }
-                start_date: { type: string }
-                end_date: { type: string }
+                start_date: { type: string, description: '開始日（YYYY-MM-DD）' }
+                start_time: { type: string, description: '開始時刻（HH:mm）。省略可' }
+                end_date: { type: string, description: '終了日（YYYY-MM-DD）' }
+                end_time: { type: string, description: '終了時刻（HH:mm）。省略可' }
+                user_list: { type: array, items: { type: object, properties: { user_id: { type: string } } } }
+                work_id: { type: string }
       responses:
         '200':
           description: 編集後の予定
