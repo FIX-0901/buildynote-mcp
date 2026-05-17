@@ -44,13 +44,13 @@ const TOOLS = [
   },
   {
     name: 'work_new',
-    description: 'BUILDYNOTEに新しい仕事を作成する。',
+    description: 'BUILDYNOTEに新しい仕事を作成する。name と kana は API 側で両方必須。',
     inputSchema: {
       type: 'object',
-      required: ['name', 'customer_id', 'construction_type_id', 'sales_staff_id'],
+      required: ['name', 'kana', 'customer_id', 'construction_type_id', 'sales_staff_id'],
       properties: {
-        name: { type: 'string', description: '仕事名' },
-        kana: { type: 'string', description: '仕事名（ふりがな）' },
+        name: { type: 'string', description: '仕事名（必須）' },
+        kana: { type: 'string', description: '仕事名ふりがな（必須）' },
         customer_id: { type: 'string', description: '顧客ID' },
         construction_type_id: { type: 'string', description: '物件区分ID' },
         sales_staff_id: { type: 'string', description: '営業担当ID' },
@@ -63,13 +63,14 @@ const TOOLS = [
   },
   {
     name: 'work_edit',
-    description: '既存の仕事を編集する。',
+    description: '既存の仕事を編集する。name と kana は API 側で両方必須。',
     inputSchema: {
       type: 'object',
-      required: ['work_id'],
+      required: ['work_id', 'name', 'kana'],
       properties: {
         work_id: { type: 'string', description: '仕事ID' },
-        name: { type: 'string', description: '仕事名' },
+        name: { type: 'string', description: '仕事名（必須）' },
+        kana: { type: 'string', description: '仕事名ふりがな（必須）' },
         status: { type: 'string', description: 'ステータス' },
         overview: { type: 'string', description: '仕事概要' },
       },
@@ -90,16 +91,17 @@ const TOOLS = [
   },
   {
     name: 'gantt_new',
-    description: '仕事に工程を新規作成する。category: 1=社内, 2=工事, 3=納材, 4=検査',
+    description: '仕事に工程を新規作成する。category: 1=社内, 2=工事, 3=納材, 4=検査。status は API 側で必須（1=公開保存が一般的）。',
     inputSchema: {
       type: 'object',
-      required: ['work_id', 'category', 'name', 'day_start', 'day_end'],
+      required: ['work_id', 'category', 'name', 'day_start', 'day_end', 'status'],
       properties: {
         work_id: { type: 'string', description: '仕事ID' },
         category: { type: 'string', description: '工程種別（1=社内/2=工事/3=納材/4=検査）', enum: ['1', '2', '3', '4'] },
         name: { type: 'string', description: '工程名' },
         day_start: { type: 'string', description: '開始日（YYYY-MM-DD）' },
         day_end: { type: 'string', description: '終了日（YYYY-MM-DD）' },
+        status: { type: 'string', description: '工程状態（1=公開保存, 2=下書き, 3=全体調整中, 4=停止中）。新規作成時は通常 1', enum: ['1', '2', '3', '4'] },
         industry_type_id: { type: 'string', description: '業種区分ID' },
         supplier_company_id: { type: 'string', description: '協力会社ID' },
         report_type: { type: 'string', description: '報告種別（1=なし, 2=報告リスト, 3=スライダー, 4=カスタム）' },

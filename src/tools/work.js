@@ -1,19 +1,26 @@
 async function listWorks(client, params = {}) {
   const p = {};
-  if (params.name) p.name = params.name;
-  if (params.status) p.status = params.status;
   if (params.customer_id) p.customer_id = params.customer_id;
   if (params.limit) p.limit = params.limit;
   if (params.page) p.page = params.page;
 
-  // construction_type_id → 名前に変換して q フィルタに設定
+  // BUILDYNOTE API は name/status/construction_type をトップレベルパラメータでは絞り込めないため、
+  // q[i] 配列形式に統一して渡す（例: q[0]=name=請求書, q[1]=status=1）
+  const qFilters = [];
+
+  if (params.name) qFilters.push(`name=${params.name}`);
+  if (params.status) qFilters.push(`status=${params.status}`);
+
   if (params.construction_type_id) {
     const ct = await client.call('construction_type_list');
     const found = (ct.list || []).find(c => String(c.id) === String(params.construction_type_id));
-    if (found) {
-      p['q[0]'] = `construction_type=${found.name}`;
-    }
-    // 絞り込み時は updated も返す
+    if (found) qFilters.push(`construction_type=${found.name}`);
+  }
+
+  qFilters.forEach((q, i) => { p[`q[${i}]`] = q; });
+
+  // 絞り込み時は updated/status も返すように fields を明示
+  if (qFilters.length > 0) {
     p['fields[0]'] = 'id';
     p['fields[1]'] = 'name';
     p['fields[2]'] = 'construction_type';
