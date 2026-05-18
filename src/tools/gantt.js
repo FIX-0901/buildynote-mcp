@@ -46,4 +46,43 @@ async function editGantt(client, { gantt_id, work_id, status, ...rest }) {
   });
 }
 
-module.exports = { listGantts, getGantt, createGantt, editGantt };
+async function getGanttsMulti(client, { schedule_ids } = {}) {
+  if (!schedule_ids) throw new Error('schedule_ids is required (comma-separated)');
+  const ids = Array.isArray(schedule_ids) ? schedule_ids.join(',') : String(schedule_ids);
+  return client.call('gantts_info', { schedule_ids: ids });
+}
+
+// gantts[]の配列を PHP配列形式に展開: gantts[i][key]=value、ネストも対応
+function flattenGantts(gantts) {
+  const out = {};
+  if (!Array.isArray(gantts)) return out;
+  gantts.forEach((g, i) => {
+    for (const [key, val] of Object.entries(g || {})) {
+      if (val === undefined || val === null) continue;
+      if (Array.isArray(val) && val.every(v => typeof v === 'object')) {
+        // 例: supplier_user: [{user_id, is_chief}, ...]
+        val.forEach((sub, j) => {
+          for (const [k2, v2] of Object.entries(sub || {})) {
+            if (v2 !== undefined && v2 !== null) out[`gantts[${i}][${key}][${j}][${k2}]`] = v2;
+          }
+        });
+      } else if (Array.isArray(val)) {
+        val.forEach((v, j) => { out[`gantts[${i}][${key}][${j}]`] = v; });
+      } else {
+        out[`gantts[${i}][${key}]`] = val;
+      }
+    }
+  });
+  return out;
+}
+
+async function editGanttsMulti(client, { work_id, status, gantts } = {}) {
+  if (!work_id) throw new Error('work_id is required');
+  if (!status) throw new Error('status is required');
+  if (!Array.isArray(gantts) || gantts.length === 0) {
+    throw new Error('gantts (array of {schedule_id, ...}) is required');
+  }
+  return client.call('gantts_edit', { work_id, status, ...flattenGantts(gantts) });
+}
+
+module.exports = { listGantts, getGantt, getGanttsMulti, createGantt, editGantt, editGanttsMulti };

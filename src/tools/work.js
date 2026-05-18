@@ -93,4 +93,10 @@ async function deleteWork(client, { work_id }) {
   return client.call('work_delete', { work_id });
 }
 
-module.exports = { listWorks, getWork, createWork, editWork, deleteWork };
+async function getWorksMulti(client, { work_ids } = {}) {
+  if (!work_ids) throw new Error('work_ids is required (comma-separated, e.g. "1,3,5")');
+  const ids = Array.isArray(work_ids) ? work_ids.join(',') : String(work_ids);
+  return client.call('works_info', { work_ids: ids });
+}
+
+module.exports = { listWorks, getWork, getWorksMulti, createWork, editWork, deleteWork };

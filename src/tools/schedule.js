@@ -80,4 +80,10 @@ async function deleteSchedule(client, { schedule_id }) {
   return client.call('schedule_delete', { schedule_id });
 }
 
-module.exports = { listSchedules, getSchedule, createSchedule, editSchedule, deleteSchedule };
+async function getSchedulesMulti(client, { schedule_ids } = {}) {
+  if (!schedule_ids) throw new Error('schedule_ids is required (comma-separated)');
+  const ids = Array.isArray(schedule_ids) ? schedule_ids.join(',') : String(schedule_ids);
+  return client.call('schedules_info', { schedule_ids: ids });
+}
+
+module.exports = { listSchedules, getSchedule, getSchedulesMulti, createSchedule, editSchedule, deleteSchedule };

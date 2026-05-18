@@ -64,8 +64,12 @@ paths:
   /works:
     get:
       operationId: listWorks
-      summary: 仕事一覧取得
+      summary: 仕事一覧取得（ids指定時は詳細を一括取得）
       parameters:
+        - name: ids
+          in: query
+          schema: { type: string }
+          description: 仕事IDのカンマ区切り。指定すると複数の仕事詳細を一括取得（works_info相当）
         - name: name
           in: query
           schema: { type: string }
@@ -193,6 +197,10 @@ paths:
           in: path
           required: true
           schema: { type: string }
+        - name: ids
+          in: query
+          schema: { type: string }
+          description: 工程ID（schedule_id）のカンマ区切り。指定すると複数の工程詳細を一括取得
         - name: start_date
           in: query
           schema: { type: string }
@@ -204,6 +212,39 @@ paths:
       responses:
         '200':
           description: 工程一覧
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    put:
+      operationId: editGanttsMulti
+      summary: 複数工程の一括編集
+      parameters:
+        - name: work_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status, gantts]
+              properties:
+                status: { type: string, description: '1=公開保存/2=下書き/3=全体調整中/4=停止中' }
+                gantts:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      schedule_id: { type: string }
+                      name: { type: string }
+                      day_start: { type: string }
+                      day_end: { type: string }
+                      delete_flag: { type: string }
+      responses:
+        '200':
+          description: 編集結果
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SuccessResponse' }
@@ -289,13 +330,16 @@ paths:
   /schedules:
     get:
       operationId: listSchedules
-      summary: 個人予定一覧取得
+      summary: 個人予定一覧取得（ids指定時は詳細を一括取得）
       parameters:
+        - name: ids
+          in: query
+          schema: { type: string }
+          description: 予定IDのカンマ区切り。指定すると複数の予定詳細を一括取得（user_idは不要になる）
         - name: user_id
           in: query
-          required: true
           schema: { type: string }
-          description: 取得対象のユーザーID（listStaffで取得可能）
+          description: 取得対象のユーザーID（listStaffで取得可能）。ids未指定時に必須
         - name: start_date
           in: query
           schema: { type: string }
@@ -438,10 +482,88 @@ paths:
   /masters/construction-types:
     get:
       operationId: listConstructionTypes
-      summary: 物件区分一覧
+      summary: 物件区分一覧（ids指定時は詳細を一括取得）
+      parameters:
+        - name: ids
+          in: query
+          required: false
+          schema: { type: string }
+          description: 物件区分IDのカンマ区切り
       responses:
         '200':
           description: 物件区分一覧
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    post:
+      operationId: createConstructionType
+      summary: 物件区分を新規作成
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                foreign_id: { type: string }
+      responses:
+        '200':
+          description: 作成結果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+  /masters/construction-types/{id}:
+    get:
+      operationId: getConstructionType
+      summary: 物件区分の詳細を取得
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 物件区分詳細
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    put:
+      operationId: editConstructionType
+      summary: 物件区分を編集
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                foreign_id: { type: string }
+      responses:
+        '200':
+          description: 編集結果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    delete:
+      operationId: deleteConstructionType
+      summary: 物件区分を削除
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 削除結果
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SuccessResponse' }
@@ -449,10 +571,596 @@ paths:
   /masters/industry-types:
     get:
       operationId: listIndustryTypes
-      summary: 業種区分一覧
+      summary: 業種区分一覧（ids指定時は詳細を一括取得）
+      parameters:
+        - name: ids
+          in: query
+          required: false
+          schema: { type: string }
       responses:
         '200':
           description: 業種区分一覧
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    post:
+      operationId: createIndustryType
+      summary: 業種区分を新規作成
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                foreign_id: { type: string }
+      responses:
+        '200':
+          description: 作成結果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+  /masters/industry-types/{id}:
+    get:
+      operationId: getIndustryType
+      summary: 業種区分の詳細を取得
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 業種区分詳細
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    put:
+      operationId: editIndustryType
+      summary: 業種区分を編集
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                foreign_id: { type: string }
+      responses:
+        '200':
+          description: 編集結果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    delete:
+      operationId: deleteIndustryType
+      summary: 業種区分を削除
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 削除結果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+  /masters/customers:
+    get:
+      operationId: listCustomers
+      summary: 顧客一覧（ids指定時は詳細を一括取得）
+      parameters:
+        - name: ids
+          in: query
+          required: false
+          schema: { type: string }
+        - name: page
+          in: query
+          required: false
+          schema: { type: string }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: 顧客一覧
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    post:
+      operationId: createCustomer
+      summary: 顧客を新規作成
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, kana]
+              properties:
+                name: { type: string }
+                kana: { type: string }
+                postcode: { type: string }
+                prefecture: { type: string }
+                city: { type: string }
+                town: { type: string }
+                tel: { type: string }
+                mobile: { type: string }
+                email: { type: string }
+                foreign_id: { type: string }
+                memo: { type: string }
+      responses:
+        '200':
+          description: 作成結果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+  /masters/customers/{id}:
+    get:
+      operationId: getCustomer
+      summary: 顧客詳細
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 顧客詳細
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    put:
+      operationId: editCustomer
+      summary: 顧客を編集
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                kana: { type: string }
+                postcode: { type: string }
+                prefecture: { type: string }
+                city: { type: string }
+                town: { type: string }
+                tel: { type: string }
+                mobile: { type: string }
+                email: { type: string }
+                foreign_id: { type: string }
+                memo: { type: string }
+      responses:
+        '200':
+          description: 編集結果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    delete:
+      operationId: deleteCustomer
+      summary: 顧客を削除
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 削除結果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+  /masters/offices:
+    get:
+      operationId: listOffices
+      summary: 支社一覧（ids指定時は詳細を一括取得）
+      parameters:
+        - name: ids
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: 支社一覧
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    post:
+      operationId: createOffice
+      summary: 支社を新規作成
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, kana, postcode, prefecture, city, tel]
+              properties:
+                name: { type: string }
+                kana: { type: string }
+                postcode: { type: string }
+                prefecture: { type: string }
+                city: { type: string }
+                town: { type: string }
+                tel: { type: string }
+                fax: { type: string }
+                foreign_id: { type: string }
+      responses:
+        '200':
+          description: 作成結果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+  /masters/offices/{id}:
+    get:
+      operationId: getOffice
+      summary: 支社詳細
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 支社詳細
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    put:
+      operationId: editOffice
+      summary: 支社を編集
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                kana: { type: string }
+                postcode: { type: string }
+                prefecture: { type: string }
+                city: { type: string }
+                town: { type: string }
+                tel: { type: string }
+                fax: { type: string }
+                foreign_id: { type: string }
+      responses:
+        '200':
+          description: 編集結果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    delete:
+      operationId: deleteOffice
+      summary: 支社を削除
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 削除結果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+  /masters/departments:
+    get:
+      operationId: listDepartments
+      summary: 部署一覧（ids指定時は詳細を一括取得）
+      parameters:
+        - name: ids
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: 部署一覧
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    post:
+      operationId: createDepartment
+      summary: 部署を新規作成
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                foreign_id: { type: string }
+      responses:
+        '200':
+          description: 作成結果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+  /masters/departments/{id}:
+    get:
+      operationId: getDepartment
+      summary: 部署詳細
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 部署詳細
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    put:
+      operationId: editDepartment
+      summary: 部署を編集
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                foreign_id: { type: string }
+      responses:
+        '200':
+          description: 編集結果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    delete:
+      operationId: deleteDepartment
+      summary: 部署を削除
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 削除結果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+  /masters/positions:
+    get:
+      operationId: listPositions
+      summary: 役職一覧（ids指定時は詳細を一括取得）
+      parameters:
+        - name: ids
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: 役職一覧
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    post:
+      operationId: createPosition
+      summary: 役職を新規作成
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                foreign_id: { type: string }
+      responses:
+        '200':
+          description: 作成結果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+  /masters/positions/{id}:
+    get:
+      operationId: getPosition
+      summary: 役職詳細
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 役職詳細
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    put:
+      operationId: editPosition
+      summary: 役職を編集
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                foreign_id: { type: string }
+      responses:
+        '200':
+          description: 編集結果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    delete:
+      operationId: deletePosition
+      summary: 役職を削除
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 削除結果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+  /masters/property-types:
+    get:
+      operationId: listPropertyTypes
+      summary: 建物タイプ一覧（ids指定時は詳細を一括取得）
+      parameters:
+        - name: ids
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: 建物タイプ一覧
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    post:
+      operationId: createPropertyType
+      summary: 建物タイプを新規作成
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                foreign_id: { type: string }
+      responses:
+        '200':
+          description: 作成結果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+  /masters/property-types/{id}:
+    get:
+      operationId: getPropertyType
+      summary: 建物タイプ詳細
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 建物タイプ詳細
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    put:
+      operationId: editPropertyType
+      summary: 建物タイプを編集
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                foreign_id: { type: string }
+      responses:
+        '200':
+          description: 編集結果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+    delete:
+      operationId: deletePropertyType
+      summary: 建物タイプを削除
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 削除結果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
+  /masters/companies:
+    get:
+      operationId: listCompanies
+      summary: 協力会社一覧（ids指定時は詳細を一括取得、読み取り専用）
+      parameters:
+        - name: ids
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: 協力会社一覧
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+  /masters/companies/{id}:
+    get:
+      operationId: getCompany
+      summary: 協力会社詳細
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 協力会社詳細
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SuccessResponse' }

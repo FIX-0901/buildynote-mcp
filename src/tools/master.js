@@ -1,32 +1,45 @@
-async function listStaff(client) {
-  return client.call('user_list');
-}
+// 社員・物件区分・業種区分の master 関連ツール。
+// 社員は読み取りのみ（API仕様書に new/edit/delete が無い）。
+const makeSimpleMaster = require('./_simpleMaster');
 
-async function getStaffInfo(client, args = {}) {
-  const { user_id } = args;
-  if (!user_id) throw new Error('user_id is required');
-  return client.call('user_info', { user_id });
-}
+// 社員（user_list/user_info/users_info） — 後方互換のため個別関数を維持
+const userFactory = makeSimpleMaster('user', 'user_id', 'user_ids');
+async function listStaff(client) { return userFactory.list(client); }
+async function getStaffInfo(client, args = {}) { return userFactory.info(client, args); }
+async function getStaffInfoMulti(client, args = {}) { return userFactory.multi(client, args); }
 
-async function getStaffInfoMulti(client, args = {}) {
-  const ids = args.user_ids;
-  if (!ids) throw new Error('user_ids is required (comma-separated, e.g. "1,3,5")');
-  const user_ids = Array.isArray(ids) ? ids.join(',') : String(ids);
-  return client.call('users_info', { user_ids });
-}
+// 物件区分（construction_type）— list は後方互換でラップ、それ以外も実装
+const ct = makeSimpleMaster('construction_type', 'construction_type_id', 'construction_type_ids');
+async function listConstructionTypes(client) { return ct.list(client); }
+const getConstructionType = ct.info;
+const getConstructionTypeMulti = ct.multi;
+const createConstructionType = ct.create;
+const editConstructionType = ct.edit;
+const deleteConstructionType = ct.remove;
 
-async function listConstructionTypes(client) {
-  return client.call('construction_type_list');
-}
-
-async function listIndustryTypes(client) {
-  return client.call('industry_type_list');
-}
+// 業種区分（industry_type）
+const it = makeSimpleMaster('industry_type', 'industry_type_id', 'industry_type_ids');
+async function listIndustryTypes(client) { return it.list(client); }
+const getIndustryType = it.info;
+const getIndustryTypeMulti = it.multi;
+const createIndustryType = it.create;
+const editIndustryType = it.edit;
+const deleteIndustryType = it.remove;
 
 module.exports = {
   listStaff,
   getStaffInfo,
   getStaffInfoMulti,
   listConstructionTypes,
+  getConstructionType,
+  getConstructionTypeMulti,
+  createConstructionType,
+  editConstructionType,
+  deleteConstructionType,
   listIndustryTypes,
+  getIndustryType,
+  getIndustryTypeMulti,
+  createIndustryType,
+  editIndustryType,
+  deleteIndustryType,
 };
