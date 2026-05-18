@@ -191,6 +191,28 @@ const TOOLS = [
     inputSchema: { type: 'object', properties: {} },
   },
   {
+    name: 'master_staff_info',
+    description: '指定した社員の詳細情報を取得する。支社・部署・役職・メール・電話番号などを含む。master_staffで取得できない詳細項目が必要な場合に使う。',
+    inputSchema: {
+      type: 'object',
+      required: ['user_id'],
+      properties: {
+        user_id: { type: 'string', description: '社員ID（master_staffで取得可能）' },
+      },
+    },
+  },
+  {
+    name: 'master_staff_info_multi',
+    description: '複数社員の詳細情報を一括取得する。支社・部署・役職を含む全社員一覧を作成する用途に使う。master_staffでID一覧を取得後、本ツールでまとめて詳細を取得するのが効率的。',
+    inputSchema: {
+      type: 'object',
+      required: ['user_ids'],
+      properties: {
+        user_ids: { type: 'string', description: '社員IDのカンマ区切り文字列（例: "1,3,5"）' },
+      },
+    },
+  },
+  {
     name: 'master_construction_types',
     description: '物件区分の一覧を取得する。仕事作成時の construction_type_id を確認するために使用する。',
     inputSchema: { type: 'object', properties: {} },
@@ -216,6 +238,8 @@ async function handleTool(name, args) {
     case 'schedule_edit':       return schedule.editSchedule(client, args);
     case 'schedule_delete':     return schedule.deleteSchedule(client, args);
     case 'master_staff':        return master.listStaff(client);
+    case 'master_staff_info':   return master.getStaffInfo(client, args);
+    case 'master_staff_info_multi': return master.getStaffInfoMulti(client, args);
     case 'master_construction_types': return master.listConstructionTypes(client);
     case 'master_industry_types':     return master.listIndustryTypes(client);
     default: throw new Error(`Unknown tool: ${name}`);

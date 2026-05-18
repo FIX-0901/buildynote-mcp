@@ -120,7 +120,17 @@ app.delete('/schedules/:id', auth, async (req, res) => {
 
 // ----- マスター -----
 app.get('/masters/staff', auth, async (req, res) => {
-  try { ok(res, await master.listStaff(req.client)); }
+  try {
+    if (req.query.ids) {
+      return ok(res, await master.getStaffInfoMulti(req.client, { user_ids: req.query.ids }));
+    }
+    ok(res, await master.listStaff(req.client));
+  }
+  catch (e) { fail(res, 500, 'API_ERROR', e.message); }
+});
+
+app.get('/masters/staff/:id', auth, async (req, res) => {
+  try { ok(res, await master.getStaffInfo(req.client, { user_id: req.params.id })); }
   catch (e) { fail(res, 500, 'API_ERROR', e.message); }
 });
 
