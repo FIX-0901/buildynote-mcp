@@ -27,6 +27,12 @@ async function listWorks(client, params = {}) {
     if (found) qFilters.push(`construction_type=${found.name}`);
   }
 
+  // 画面表示用の仕事ID（B+5桁形式、 例: B01762）。 BUILDYNOTE 内部で code フィールドに格納
+  if (params.code) qFilters.push(`code=${params.code}`);
+
+  // 外部連携ID（例: gitlab:14:3294）。 GitLab/CRM 等の外部システム参照用
+  if (params.foreign_id) qFilters.push(`foreign_id=${params.foreign_id}`);
+
   qFilters.forEach((q, i) => { p[`q[${i}]`] = q; });
 
   // 絞り込み時はレスポンスサイズを抑えるため fields を明示
