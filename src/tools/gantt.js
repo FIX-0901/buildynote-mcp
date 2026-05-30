@@ -1,5 +1,43 @@
 const CATEGORY_MAP = { '社内': '1', '工事': '2', '納材': '3', '検査': '4' };
 
+// YYYY-MM-DD に N日加算（UTC基準でタイムゾーンずれを回避）
+function addDays(ymd, days) {
+  if (!ymd) return ymd;
+  const [y, m, d] = ymd.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + (parseInt(days, 10) || 0));
+  return dt.toISOString().substring(0, 10);
+}
+
+// 2つの YYYY-MM-DD の日数差（to - from）
+function dayDiff(fromYmd, toYmd) {
+  const f = Date.parse(fromYmd + 'T00:00:00Z');
+  const t = Date.parse(toYmd + 'T00:00:00Z');
+  return Math.round((t - f) / 86400000);
+}
+
+// gantt_new 用に payload を PHP配列形式へ展開（supplier_user[i][user_id] 等）
+function flattenGanttNew(payload) {
+  const out = {};
+  for (const [key, val] of Object.entries(payload)) {
+    if (val === undefined || val === null) continue;
+    if (Array.isArray(val)) {
+      val.forEach((sub, i) => {
+        if (sub && typeof sub === 'object') {
+          for (const [k2, v2] of Object.entries(sub)) {
+            if (v2 !== undefined && v2 !== null) out[`${key}[${i}][${k2}]`] = v2;
+          }
+        } else if (sub !== undefined && sub !== null) {
+          out[`${key}[${i}]`] = sub;
+        }
+      });
+    } else {
+      out[key] = val;
+    }
+  }
+  return out;
+}
+
 // YYYY-MM-DD → YYYY-MM-DDT00:00:00（gantt_list は T付き形式が必須）
 function toGanttDatetime(s, endOfDay) {
   if (!s) return undefined;
@@ -85,4 +123,122 @@ async function editGanttsMulti(client, { work_id, status, gantts } = {}) {
   return client.call('gantts_edit', { work_id, status, ...flattenGantts(gantts) });
 }
 
-module.exports = { listGantts, getGantt, getGanttsMulti, createGantt, editGantt, editGanttsMulti };
+// 工程の一括コピー。 source_work_id の全（または指定）工程を target_work_id に複製する。
+// 工程の削除APIが無いため、 dry_run=true（既定）でプレビューを返し、 false で実際に作成する。
+// date_mode: 'as_is'（そのまま）/ 'shift'（全工程 +shift_days）/ 'anchor'（最小開始日を anchor_date に合わせ相対関係維持）
+async function copyGantts(client, params = {}) {
+  const {
+    source_work_id,
+    target_work_id,
+    dry_run = true,
+    date_mode = 'as_is',
+    shift_days = 0,
+    anchor_date,
+    gantt_ids,
+  } = params;
+
+  if (!source_work_id) throw new Error('source_work_id is required');
+  if (!target_work_id) throw new Error('target_work_id is required');
+
+  // 1. ソース工程を広期間で全取得（date range 必須・未指定だと0件になる仕様のため）
+  const listRes = await client.call('gantt_list', {
+    work_id: source_work_id,
+    start_date: '2020-01-01T00:00:00',
+    end_date: '2030-12-31T23:59:59',
+  });
+  let sourceList = listRes.list || [];
+
+  if (gantt_ids) {
+    const idset = new Set(String(gantt_ids).split(',').map(s => s.trim()));
+    sourceList = sourceList.filter(g => idset.has(String(g.id)));
+  }
+  if (sourceList.length === 0) {
+    return { source_work_id, target_work_id, count: 0, planned: [], message: 'コピー対象の工程が見つかりません（広期間で0件）' };
+  }
+
+  // 2. 各工程の詳細を gantt_info で取得（担当者・会社・ラベル等のフルフィールド）
+  const details = [];
+  for (const g of sourceList) {
+    const info = await client.call('gantt_info', { schedule_id: g.id });
+    if (info && !info.errors) details.push(info);
+  }
+
+  // 3. 日付オフセット計算
+  const parseDay = (s) => (s || '').substring(0, 10);
+  let offsetDays = 0;
+  if (date_mode === 'shift') {
+    offsetDays = parseInt(shift_days, 10) || 0;
+  } else if (date_mode === 'anchor' && anchor_date) {
+    const minStart = details.map(d => parseDay(d.start_date)).filter(Boolean).sort()[0];
+    if (minStart) offsetDays = dayDiff(minStart, anchor_date);
+  }
+
+  // 4. gantt_info → gantt_new 形式へマッピング
+  const planned = details.map(d => {
+    const payload = {
+      work_id: target_work_id,
+      name: d.name,
+      category: CATEGORY_MAP[d.category] || d.category,
+      status: '1', // 1=開始前（新規なので進捗リセット）
+      day_start: addDays(parseDay(d.start_date), offsetDays),
+      day_end: addDays(parseDay(d.end_date), offsetDays),
+    };
+    // supplier_company_id を同時指定しないと supplier_user は反映されない
+    if (d.supplier_company_id) payload.supplier_company_id = d.supplier_company_id;
+    if (d.order_company_id) payload.order_company_id = d.order_company_id;
+    if (d.label_id) payload.label_id = d.label_id;
+    if (d.industry_type_id) payload.industry_type_id = d.industry_type_id;
+    if (Array.isArray(d.supplier_user) && d.supplier_user.length) {
+      payload.supplier_user = d.supplier_user.map(u => ({ user_id: u.user_id, is_chief: u.is_chief ? 1 : 0 }));
+    }
+    if (Array.isArray(d.order_user) && d.order_user.length) {
+      payload.order_user = d.order_user.map(u => ({ user_id: u.user_id, is_chief: u.is_chief ? 1 : 0 }));
+    }
+    return payload;
+  });
+
+  // 5. dry_run: 作成予定の要約を返す（実際には作らない）
+  if (dry_run) {
+    return {
+      dry_run: true,
+      source_work_id,
+      target_work_id,
+      date_mode,
+      offset_days: offsetDays,
+      count: planned.length,
+      planned: planned.map(p => ({
+        name: p.name,
+        category: p.category,
+        day_start: p.day_start,
+        day_end: p.day_end,
+        supplier_company_id: p.supplier_company_id || null,
+        chief_user_ids: (p.supplier_user || []).filter(u => u.is_chief).map(u => u.user_id),
+      })),
+    };
+  }
+
+  // 6. 実行: 各工程を gantt_new で作成（削除APIが無いので慎重に）
+  const created = [];
+  const failed = [];
+  for (const payload of planned) {
+    const res = await client.call('gantt_new', flattenGanttNew(payload));
+    if (res && (res.errors || res.result === false)) {
+      failed.push({ name: payload.name, error: res.errors || 'unknown' });
+    } else {
+      created.push({ name: payload.name, schedule_id: res.id || res.schedule_id || null, day_start: payload.day_start, day_end: payload.day_end });
+    }
+  }
+  return {
+    dry_run: false,
+    source_work_id,
+    target_work_id,
+    date_mode,
+    offset_days: offsetDays,
+    created_count: created.length,
+    failed_count: failed.length,
+    created,
+    failed,
+  };
+}
+
+module.exports = { listGantts, getGantt, getGanttsMulti, createGantt, editGantt, editGanttsMulti, copyGantts };

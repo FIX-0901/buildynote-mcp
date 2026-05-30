@@ -138,6 +138,16 @@ app.put('/works/:work_id/gantt', auth, async (req, res) => {
   try { ok(res, await gantt.editGanttsMulti(req.client, { work_id: req.params.work_id, ...req.body })); }
   catch (e) { fail(res, 500, 'API_ERROR', e.message); }
 });
+// 工程の一括コピー（プレビュー: 実際には作成せず作成予定を返す）
+app.post('/works/:source_work_id/gantt/copy/preview', auth, async (req, res) => {
+  try { ok(res, await gantt.copyGantts(req.client, { source_work_id: req.params.source_work_id, ...req.body, dry_run: true })); }
+  catch (e) { fail(res, 500, 'API_ERROR', e.message); }
+});
+// 工程の一括コピー（実行）
+app.post('/works/:source_work_id/gantt/copy', auth, async (req, res) => {
+  try { ok(res, await gantt.copyGantts(req.client, { source_work_id: req.params.source_work_id, ...req.body, dry_run: false })); }
+  catch (e) { fail(res, 500, 'API_ERROR', e.message); }
+});
 
 // ---- 個人予定 ----
 app.get('/schedules', auth, async (req, res) => {
