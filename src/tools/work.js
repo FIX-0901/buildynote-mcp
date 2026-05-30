@@ -46,13 +46,22 @@ async function listWorks(client, params = {}) {
 
   const requestedLimit = parseInt(params.limit, 10) || 50;
 
-  // name はBN API側で部分一致できないので、多めに取得してクライアント側で filter
-  if (params.name) {
-    p.limit = 1000;
-    delete p.page;
-  } else if (params.limit) {
-    p.limit = params.limit;
-  }
+  // 全ページ走査ヘルパ。
+  // BUILDYNOTE API は limit 上限が実質 1000 のため、 1ページでは全仕事(約3900件)を取りきれない。
+  // name 部分一致や sort=desc はクライアント側で行う関係上、 全ページ集約しないと
+  // 1000件目以降に埋もれた仕事を取りこぼす（「0601テスト」が name検索で 0件になる bug の原因）。
+  // q[]フィルタ（construction_type/status/code/foreign_id）付きならサーバー側で絞られるので
+  // pageCount が小さく軽い。 name 単独時のみ全件（～4ページ）走査する。
+  const fetchAllPages = async (maxPages = 10) => {
+    const first = await client.call('work_list', { ...p, limit: 1000, page: 1 });
+    let all = first.list || [];
+    const pageCount = Math.min(first.pageCount || 1, maxPages);
+    for (let pg = 2; pg <= pageCount; pg++) {
+      const r = await client.call('work_list', { ...p, limit: 1000, page: pg });
+      all = all.concat(r.list || []);
+    }
+    return all;
+  };
 
   const applyNameFilter = (list) => {
     if (!params.name || !list) return list;
@@ -60,27 +69,20 @@ async function listWorks(client, params = {}) {
     return list.filter(w => (w.name || '').toLowerCase().includes(q));
   };
 
-  // sort=desc/updated_desc: 全取得 → クライアント側で updated 降順ソート → 指定件数
-  if (params.sort === 'desc' || params.sort === 'updated_desc') {
-    p.limit = 1000;
+  // name 検索 または sort=desc/updated_desc は全ページ走査が必要
+  if (params.name || params.sort === 'desc' || params.sort === 'updated_desc') {
     delete p.page;
-    const result = await client.call('work_list', p);
-    if (result.list) {
-      result.list = applyNameFilter(result.list);
-      result.list.sort((a, b) => (b.updated || '').localeCompare(a.updated || ''));
-      result.list = result.list.slice(0, requestedLimit);
-      result.count = result.list.length;
+    let list = await fetchAllPages();
+    list = applyNameFilter(list);
+    if (params.sort === 'desc' || params.sort === 'updated_desc') {
+      list.sort((a, b) => (b.updated || '').localeCompare(a.updated || ''));
     }
-    return result;
+    list = list.slice(0, requestedLimit);
+    return { page: 1, limit: requestedLimit, count: list.length, prevPage: false, nextPage: false, pageCount: 1, list };
   }
 
-  const result = await client.call('work_list', p);
-  if (params.name && result.list) {
-    result.list = applyNameFilter(result.list);
-    result.list = result.list.slice(0, requestedLimit);
-    result.count = result.list.length;
-  }
-  return result;
+  if (params.limit) p.limit = params.limit;
+  return client.call('work_list', p);
 }
 
 async function getWork(client, { work_id }) {
