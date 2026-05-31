@@ -52,6 +52,24 @@ async function listGantts(client, params = {}) {
   return client.call('gantt_list', p);
 }
 
+// 工程の横断検索: user_id / company_id / work_id / 期間 で絞り込む
+// BUILDYNOTE 本体仕様: user_id, work_id, company_id, start_date, end_date のいずれか一つ必須
+async function searchGantts(client, params = {}) {
+  const p = {};
+  if (params.user_id) p.user_id = params.user_id;
+  if (params.work_id) p.work_id = params.work_id;
+  if (params.company_id) p.company_id = params.company_id;
+  if (params.start_date) p.start_date = toGanttDatetime(params.start_date, false);
+  if (params.end_date) p.end_date = toGanttDatetime(params.end_date, true);
+  if (params.limit) p.limit = params.limit;
+  if (params.page) p.page = params.page;
+  if (params.fields) p.fields = params.fields;
+  if (Object.keys(p).length === 0) {
+    throw new Error('user_id / work_id / company_id / start_date / end_date のいずれか一つ必須');
+  }
+  return client.call('gantt_list', p);
+}
+
 async function getGantt(client, { gantt_id }) {
   // API仕様書: パラメータ名は schedule_id（gantt_id ではない）
   return client.call('gantt_info', { schedule_id: gantt_id });
@@ -241,4 +259,4 @@ async function copyGantts(client, params = {}) {
   };
 }
 
-module.exports = { listGantts, getGantt, getGanttsMulti, createGantt, editGantt, editGanttsMulti, copyGantts };
+module.exports = { listGantts, searchGantts, getGantt, getGanttsMulti, createGantt, editGantt, editGanttsMulti, copyGantts };

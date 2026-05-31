@@ -113,6 +113,23 @@ app.delete('/works/:id', auth, async (req, res) => {
 });
 
 // ---- 工程 ----
+// 横断検索: user_id / company_id / work_id / 期間 で工程を絞り込む (work_id 必須ではない)
+app.get('/gantt/search', auth, async (req, res) => {
+  try {
+    const q = req.query || {};
+    const params = {};
+    if (q.user_id) params.user_id = q.user_id;
+    if (q.work_id) params.work_id = q.work_id;
+    if (q.company_id) params.company_id = q.company_id;
+    if (q.start_date) params.start_date = q.start_date;
+    if (q.end_date) params.end_date = q.end_date;
+    if (q.limit) params.limit = q.limit;
+    if (q.page) params.page = q.page;
+    if (q.fields) params.fields = q.fields;
+    ok(res, await gantt.searchGantts(req.client, params));
+  } catch (e) { fail(res, 400, 'BAD_REQUEST', e.message); }
+});
+
 app.get('/works/:work_id/gantt', auth, async (req, res) => {
   try {
     if (req.query.ids) {

@@ -188,6 +188,52 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/SuccessResponse' }
 
+  /gantt/search:
+    get:
+      operationId: searchGantts
+      summary: 工程横断検索（user_id/company_id/work_id/期間で絞り込み）
+      description: |
+        担当者・会社・仕事・期間のいずれかで工程を横断検索する。
+        work_id を指定しなくても user_id 等で広く取得できる。
+        user_id / work_id / company_id / start_date / end_date のいずれか一つ以上必須。
+      parameters:
+        - name: user_id
+          in: query
+          schema: { type: string }
+          description: 担当者ID（受注側担当者 chief 等）
+        - name: company_id
+          in: query
+          schema: { type: string }
+          description: 会社ID（自社の全工程を取得したい時等）
+        - name: work_id
+          in: query
+          schema: { type: string }
+          description: 仕事IDで絞り込み
+        - name: start_date
+          in: query
+          schema: { type: string }
+          description: 期間開始（YYYY-MM-DD、内部で T00:00:00 を付与）
+        - name: end_date
+          in: query
+          schema: { type: string }
+          description: 期間終了（YYYY-MM-DD、内部で T23:59:59 を付与）
+        - name: limit
+          in: query
+          schema: { type: integer }
+          description: 最大件数（最大1000、 既定50）
+        - name: page
+          in: query
+          schema: { type: integer }
+        - name: fields
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: 工程一覧
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessResponse' }
+
   /works/{work_id}/gantt:
     get:
       operationId: listGantts
