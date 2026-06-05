@@ -37,10 +37,10 @@ async function getSchedule(client, { schedule_id }) {
 async function createSchedule(client, params) {
   const { user_list, ...rest } = params;
   const users = Array.isArray(user_list) ? [...user_list] : [];
-  // APIユーザー(8497)が含まれていなければ自動追加（後から削除できるようにするため）
-  if (!users.some(u => String(u.user_id || u) === '8497')) {
-    users.push({ user_id: '8497' });
-  }
+  // 注意: 以前は FIXユーザー(8497) を必ず user_list に追加していたが、
+  // 他社トークン(例: メガステップの島田)では他社ユーザー8497を予定に入れられず作成が失敗する。
+  // マルチテナント運用では操作トークン本人が user_list に含まれていれば作成・削除できるため、
+  // 8497 の強制追加は廃止し、 呼び出し側が指定した user_list をそのまま使う。
   return client.call('schedule_new', { ...rest, ...flattenUserList(users) });
 }
 
@@ -50,33 +50,10 @@ async function editSchedule(client, { schedule_id, user_list, ...rest }) {
 }
 
 async function deleteSchedule(client, { schedule_id }) {
-  // schedule_delete はAPIユーザー(8497)が user_list にいる場合のみ成功する。
-  // 8497 が含まれていない既存予定は、先に schedule_edit で追加してから削除する。
-  const info = await client.call('schedule_info', { schedule_id });
-  if (info.errors) return info;
-
-  const currentUsers = Array.isArray(info.user_list)
-    ? info.user_list.map(u => ({ user_id: String(u.user_id) }))
-    : [];
-
-  if (!currentUsers.some(u => u.user_id === '8497')) {
-    const editUsers = [...currentUsers, { user_id: '8497' }];
-    const startDate = (info.start_date || '').substring(0, 10);
-    const startTime = (info.start_date || '').substring(11, 16) || undefined;
-    const endDate = (info.end_date || '').substring(0, 10);
-    const endTime = (info.end_date || '').substring(11, 16) || undefined;
-    await client.call('schedule_edit', {
-      schedule_id,
-      name: info.name,
-      start_date: startDate,
-      ...(startTime ? { start_time: startTime } : {}),
-      end_date: endDate,
-      ...(endTime ? { end_time: endTime } : {}),
-      is_regular: 0,
-      ...flattenUserList(editUsers),
-    });
-  }
-
+  // schedule_delete は「操作トークンのユーザーが その予定の user_list に含まれている」場合に成功する。
+  // 旧実装は FIXユーザー(8497) を強制的に追加してから削除していたが、 他社トークンでは
+  // 8497 を追加できず失敗する。 マルチテナント運用では操作ユーザー本人が user_list にいる前提で
+  // そのまま削除を試みる（自分が参加している予定を自分のトークンで削除する正しい挙動）。
   return client.call('schedule_delete', { schedule_id });
 }
 
