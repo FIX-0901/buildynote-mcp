@@ -271,7 +271,7 @@ const TOOLS = [
   },
   {
     name: 'schedule_new',
-    description: '個人予定を新規作成する。日付はYYYY-MM-DD、時刻はHH:mmで別フィールド。user_listに参加者を指定（APIユーザー8497を含めると後で削除可能）。',
+    description: '個人予定を新規作成する。日付はYYYY-MM-DD、時刻はHH:mmで別フィールド。user_listに参加者(user_id)を指定。操作トークン本人を含めると後で本人が削除できる。',
     inputSchema: {
       type: 'object',
       required: ['name', 'start_date', 'end_date', 'user_list'],
