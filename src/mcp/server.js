@@ -162,7 +162,7 @@ const TOOLS = [
   // ============ 工程（ガント） ============
   {
     name: 'gantt_list',
-    description: '指定した仕事の工程一覧を取得する。日付未指定だと今日の工程のみ返るため、全工程を取得する場合はstart_date/end_dateを広めに指定すること。',
+    description: '指定した仕事の工程一覧を取得する。start_date/end_date を指定すると「その期間に重なる工程」を全件返す（開始・終了が期間外にはみ出す長期工程も期間に重なれば含む。期間またぎ漏れ・50件キャップはMCP側で解消済み）。日付未指定なら全期間。',
     inputSchema: {
       type: 'object',
       required: ['work_id'],

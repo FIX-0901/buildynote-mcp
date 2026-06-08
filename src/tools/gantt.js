@@ -45,29 +45,101 @@ function toGanttDatetime(s, endOfDay) {
   return s;
 }
 
+// --- gantt_list の2大トラップ対策（overlap + 全ページ走査） ---
+// BUILDYNOTE の gantt_list は以下2つの罠がある:
+//  (1) 日付フィルタが「開始日・終了日の両方が指定期間内に収まる工程」だけを返す
+//      → 期間をまたぐ長期工程（例 5/1〜6/29 を 6月窓で問い合わせ）が黙って欠落する。
+//  (2) 1ページ既定50件で打ち切り（ページ送りしないと後半が消える）。さらに
+//      日付を一切指定しないと0件になる仕様のため、必ず期間を渡す必要がある。
+// 対策: 取得時は期間を極端に広げて (1) を無効化し、全ページ走査で (2) を解消、
+//      最後に手元で「真の重なり」に絞って返す。これで「明日active な工程」が正しく出る。
+const WIDE_START = '2000-01-01T00:00:00';
+const WIDE_END = '2100-12-31T23:59:59';
+const PAGE_LIMIT = 500;
+const MAX_PAGES = 40; // 安全弁（最大 20000 件）
+
+const ymd = s => (s || '').slice(0, 10);
+
+// gantt_list を全ページ走査して list を結合する（50件キャップ対策）
+async function fetchAllGanttPages(client, baseParams) {
+  let all = [];
+  let last = {};
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const res = await client.call('gantt_list', { ...baseParams, limit: PAGE_LIMIT, page });
+    last = res;
+    if (res && res.errors) return res; // エラーはそのまま返す
+    const l = (res && res.list) || [];
+    all = all.concat(l);
+    if (l.length < PAGE_LIMIT) break;
+  }
+  return { ...last, list: all };
+}
+
+// 指定期間に「重なる」工程を返す共通処理（取得は常に広期間＋全ページ、最後に重なりで絞る）
+async function ganttOverlapSearch(client, baseParams, startDate, endDate) {
+  const wantStart = startDate ? ymd(startDate) : null;
+  const wantEnd = endDate ? ymd(endDate) : null;
+
+  // 取得は常に広期間で（日付未指定だと0件になる仕様のため、必ず期間を渡す）
+  const fetchParams = { ...baseParams, start_date: WIDE_START, end_date: WIDE_END };
+  // overlap 判定に開始日・終了日が必須なので fields 指定時は補完する
+  if (fetchParams.fields) {
+    if (!/start_date/.test(fetchParams.fields)) fetchParams.fields += ',start_date';
+    if (!/end_date/.test(fetchParams.fields)) fetchParams.fields += ',end_date';
+  }
+
+  const res = await fetchAllGanttPages(client, fetchParams);
+  if (res && res.errors) return res;
+
+  let list = res.list || [];
+  if (wantStart || wantEnd) {
+    list = list.filter(g => {
+      const gs = ymd(g.start_date);
+      const ge = ymd(g.end_date);
+      if (wantEnd && gs && gs > wantEnd) return false;     // 指定終了より後に始まる工程は対象外
+      if (wantStart && ge && ge < wantStart) return false; // 指定開始より前に終わる工程は対象外
+      return true;
+    });
+  }
+  return { ...res, list, total: list.length };
+}
+
 async function listGantts(client, params = {}) {
-  const p = { work_id: params.work_id };
-  if (params.start_date) p.start_date = toGanttDatetime(params.start_date, false);
-  if (params.end_date) p.end_date = toGanttDatetime(params.end_date, true);
-  return client.call('gantt_list', p);
+  // 明示的に page 指定がある場合は従来の単発呼び出し（エスケープハッチ）
+  if (params.page) {
+    const p = { work_id: params.work_id };
+    if (params.start_date) p.start_date = toGanttDatetime(params.start_date, false);
+    if (params.end_date) p.end_date = toGanttDatetime(params.end_date, true);
+    if (params.limit) p.limit = params.limit;
+    p.page = params.page;
+    return client.call('gantt_list', p);
+  }
+  const base = { work_id: params.work_id };
+  if (params.fields) base.fields = params.fields;
+  return ganttOverlapSearch(client, base, params.start_date, params.end_date);
 }
 
 // 工程の横断検索: user_id / company_id / work_id / 期間 で絞り込む
 // BUILDYNOTE 本体仕様: user_id, work_id, company_id, start_date, end_date のいずれか一つ必須
 async function searchGantts(client, params = {}) {
-  const p = {};
-  if (params.user_id) p.user_id = params.user_id;
-  if (params.work_id) p.work_id = params.work_id;
-  if (params.company_id) p.company_id = params.company_id;
-  if (params.start_date) p.start_date = toGanttDatetime(params.start_date, false);
-  if (params.end_date) p.end_date = toGanttDatetime(params.end_date, true);
-  if (params.limit) p.limit = params.limit;
-  if (params.page) p.page = params.page;
-  if (params.fields) p.fields = params.fields;
-  if (Object.keys(p).length === 0) {
+  const base = {};
+  if (params.user_id) base.user_id = params.user_id;
+  if (params.work_id) base.work_id = params.work_id;
+  if (params.company_id) base.company_id = params.company_id;
+  if (params.fields) base.fields = params.fields;
+  if (Object.keys(base).length === 0 && !params.start_date && !params.end_date) {
     throw new Error('user_id / work_id / company_id / start_date / end_date のいずれか一つ必須');
   }
-  return client.call('gantt_list', p);
+  // 明示的に page 指定がある場合は従来の単発呼び出し（エスケープハッチ）
+  if (params.page) {
+    const p = { ...base };
+    if (params.start_date) p.start_date = toGanttDatetime(params.start_date, false);
+    if (params.end_date) p.end_date = toGanttDatetime(params.end_date, true);
+    if (params.limit) p.limit = params.limit;
+    p.page = params.page;
+    return client.call('gantt_list', p);
+  }
+  return ganttOverlapSearch(client, base, params.start_date, params.end_date);
 }
 
 async function getGantt(client, { gantt_id }) {
