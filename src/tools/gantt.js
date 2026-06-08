@@ -104,6 +104,61 @@ async function ganttOverlapSearch(client, baseParams, startDate, endDate) {
   return { ...res, list, total: list.length };
 }
 
+// --- 役割別の仕分け（search_gantts で user_id 指定時） ---
+// 工程には対象ユーザーが「発注/受注/実施/関係」のどの立場で関わるかが gantt_info に入っている。
+// gantt_list 自体は役割を返さないため、候補idを gantts_info(複数一括) で引いて役割を判定する。
+// BUILDYNOTE のカレンダーは 受注/実施/関係 のみ表示し、発注のみの工程は出ない（その旨を on_calendar で示す）。
+const ROLE_DEFS = [
+  { key: 'order', field: 'order_user', label: '発注している工程', on_calendar: false },
+  { key: 'supplier', field: 'supplier_user', label: '受注している工程', on_calendar: true },
+  { key: 'constructor', field: 'constructor_user', label: '実施者となっている工程', on_calendar: true },
+  { key: 'other', field: 'other_user', label: '関係している工程', on_calendar: true },
+];
+
+const inRole = (arr, uid) => Array.isArray(arr) && arr.some(u => String(u.user_id) === String(uid));
+
+// gantts_info を50件ずつ一括取得して id→詳細 の Map にする
+async function fetchGanttInfoMap(client, ids) {
+  const map = new Map();
+  const CHUNK = 50;
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const slice = ids.slice(i, i + CHUNK).map(String);
+    const r = await client.call('gantts_info', { schedule_ids: slice.join(',') });
+    const arr = (r && (r.list || r.data)) || (Array.isArray(r) ? r : []);
+    for (const g of arr) if (g && g.id != null) map.set(String(g.id), g);
+  }
+  return map;
+}
+
+// overlap で得た工程に、対象ユーザーの役割を付与し役割別バケットに仕分ける
+async function enrichWithUserRoles(client, overlapRes, uid) {
+  const src = overlapRes.list || [];
+  const by_role = { order: [], supplier: [], constructor: [], other: [] };
+  if (src.length === 0) {
+    return { ...overlapRes, by_role, role_labels: roleLabels(), note: roleNote() };
+  }
+  const infoMap = await fetchGanttInfoMap(client, src.map(g => g.id));
+  const enriched = [];
+  for (const g of src) {
+    const info = infoMap.get(String(g.id)) || {};
+    const your_roles = ROLE_DEFS.filter(d => inRole(info[d.field], uid)).map(d => d.key);
+    const item = {
+      id: g.id, name: g.name, work_id: g.work_id, work_name: g.work_name,
+      start_date: g.start_date, end_date: g.end_date,
+      your_roles,
+      on_calendar: your_roles.some(k => ROLE_DEFS.find(d => d.key === k).on_calendar),
+    };
+    enriched.push(item);
+    for (const k of your_roles) by_role[k].push(item);
+  }
+  return { ...overlapRes, list: enriched, total: enriched.length, by_role, role_labels: roleLabels(), note: roleNote() };
+}
+
+const roleLabels = () => ROLE_DEFS.reduce((o, d) => (o[d.key] = d.label, o), {});
+const roleNote = () =>
+  '工程は対象ユーザーの立場(発注/受注/実施/関係)で by_role に仕分けてあります。' +
+  '発注のみの工程は本人のカレンダーに表示されません(on_calendar=false)。関係している工程(other)は関係会社としての参加です。';
+
 async function listGantts(client, params = {}) {
   // 明示的に page 指定がある場合は従来の単発呼び出し（エスケープハッチ）
   if (params.page) {
@@ -139,7 +194,12 @@ async function searchGantts(client, params = {}) {
     p.page = params.page;
     return client.call('gantt_list', p);
   }
-  return ganttOverlapSearch(client, base, params.start_date, params.end_date);
+  const res = await ganttOverlapSearch(client, base, params.start_date, params.end_date);
+  // user_id 指定時は役割別に仕分けて返す（発注/受注/実施/関係）
+  if (params.user_id && res && !res.errors) {
+    return enrichWithUserRoles(client, res, params.user_id);
+  }
+  return res;
 }
 
 async function getGantt(client, { gantt_id }) {
