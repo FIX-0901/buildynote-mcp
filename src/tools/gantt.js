@@ -208,7 +208,21 @@ async function getGantt(client, { gantt_id }) {
 }
 
 async function createGantt(client, params) {
-  return client.call('gantt_new', params);
+  // BUILDYNOTE gantt_new は day_start/day_end（日付のみ YYYY-MM-DD）を要求する。
+  // REST 層は他ツールと統一して start_date/end_date を受けるので、ここで変換する。
+  // （変換漏れだと「開始日が設定されていません」エラーになる）
+  const { start_date, end_date, day_start, day_end, category, ...rest } = params;
+  const payload = { ...rest };
+  const ds = day_start || start_date;
+  const de = day_end || end_date;
+  if (ds) payload.day_start = String(ds).substring(0, 10);
+  if (de) payload.day_end = String(de).substring(0, 10);
+  // category は数値(1-4)。和名（社内/工事/納材/検査）で来た場合に備えてマップ
+  if (category !== undefined && category !== null) {
+    payload.category = CATEGORY_MAP[category] || category;
+  }
+  // supplier_user 等の配列を PHP 配列形式へ展開してから送る
+  return client.call('gantt_new', flattenGanttNew(payload));
 }
 
 async function editGantt(client, { gantt_id, work_id, status, ...rest }) {
