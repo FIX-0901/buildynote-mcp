@@ -146,6 +146,11 @@ app.post('/works/:work_id/gantt', auth, async (req, res) => {
   try { ok(res, await gantt.createGantt(req.client, { work_id: req.params.work_id, ...req.body })); }
   catch (e) { fail(res, 500, 'API_ERROR', e.message); }
 });
+// 複数工程の一括登録（工程表まとめ登録用・確認1回で全件）
+app.post('/works/:work_id/gantts', auth, async (req, res) => {
+  try { ok(res, await gantt.createGanttsMulti(req.client, { work_id: req.params.work_id, ...req.body })); }
+  catch (e) { fail(res, 500, 'API_ERROR', e.message); }
+});
 app.put('/works/:work_id/gantt/:id', auth, async (req, res) => {
   try { ok(res, await gantt.editGantt(req.client, { gantt_id: req.params.id, work_id: req.params.work_id, ...req.body })); }
   catch (e) { fail(res, 500, 'API_ERROR', e.message); }

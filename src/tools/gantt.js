@@ -207,10 +207,9 @@ async function getGantt(client, { gantt_id }) {
   return client.call('gantt_info', { schedule_id: gantt_id });
 }
 
-async function createGantt(client, params) {
-  // BUILDYNOTE gantt_new は day_start/day_end（日付のみ YYYY-MM-DD）を要求する。
-  // REST 層は他ツールと統一して start_date/end_date を受けるので、ここで変換する。
-  // （変換漏れだと「開始日が設定されていません」エラーになる）
+// REST 層の start_date/end_date 入力を gantt_new 用 payload(day_start/day_end・PHP配列展開) に変換する。
+// 変換漏れだと「開始日が設定されていません」(G003-004-008)エラーになる。
+function buildGanttNewPayload(params) {
   const { start_date, end_date, day_start, day_end, category, ...rest } = params;
   const payload = { ...rest };
   const ds = day_start || start_date;
@@ -221,8 +220,43 @@ async function createGantt(client, params) {
   if (category !== undefined && category !== null) {
     payload.category = CATEGORY_MAP[category] || category;
   }
-  // supplier_user 等の配列を PHP 配列形式へ展開してから送る
-  return client.call('gantt_new', flattenGanttNew(payload));
+  return flattenGanttNew(payload);
+}
+
+async function createGantt(client, params) {
+  return client.call('gantt_new', buildGanttNewPayload(params));
+}
+
+// 複数工程を一括登録する。工程表など多数の工程をまとめて作る用。
+// 1回の呼び出しで全件 gantt_new し、created/failed を返す（削除APIが無いので失敗は失敗のまま報告）。
+async function createGanttsMulti(client, { work_id, gantts } = {}) {
+  if (!work_id) throw new Error('work_id is required');
+  if (!Array.isArray(gantts) || gantts.length === 0) {
+    throw new Error('gantts (array of gantt objects) is required');
+  }
+  const created = [];
+  const failed = [];
+  for (let i = 0; i < gantts.length; i++) {
+    const g = gantts[i];
+    try {
+      const res = await client.call('gantt_new', buildGanttNewPayload({ work_id, ...g }));
+      if (res && (res.errors || res.result === false)) {
+        failed.push({ index: i, name: g.name, error: res.errors || 'unknown' });
+      } else {
+        created.push({ index: i, name: g.name, schedule_id: res.id || res.schedule_id || null });
+      }
+    } catch (e) {
+      failed.push({ index: i, name: g.name, error: e.message });
+    }
+  }
+  return {
+    work_id,
+    total: gantts.length,
+    created_count: created.length,
+    failed_count: failed.length,
+    created,
+    failed,
+  };
 }
 
 async function editGantt(client, { gantt_id, work_id, status, ...rest }) {
@@ -405,4 +439,4 @@ async function copyGantts(client, params = {}) {
   };
 }
 
-module.exports = { listGantts, searchGantts, getGantt, getGanttsMulti, createGantt, editGantt, editGanttsMulti, copyGantts };
+module.exports = { listGantts, searchGantts, getGantt, getGanttsMulti, createGantt, createGanttsMulti, editGantt, editGanttsMulti, copyGantts };
