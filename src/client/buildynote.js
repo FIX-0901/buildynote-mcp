@@ -37,6 +37,15 @@ class BuildynoteClient {
       req.end();
     });
   }
+
+  // 自分自身 (whoami): #3360 で追加された「APIトークンから本人を返す」エンドポイント。
+  // 実機検証(2026-06-16)の結果、 本番実装は type=staff_current(POST) 形式。
+  // (パス /system/restApi/json/staff/current は type 未指定扱いで 00003 を返すため使わない)
+  // レスポンス例: { id, name, email, user_type, company_id, company_name,
+  //               office[], department[], position[], is_admin }
+  currentStaff() {
+    return this.call('staff_current');
+  }
 }
 
 module.exports = { BuildynoteClient };

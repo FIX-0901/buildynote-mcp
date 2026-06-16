@@ -197,6 +197,13 @@ app.delete('/schedules/:id', auth, async (req, res) => {
   catch (e) { fail(res, 500, 'API_ERROR', e.message); }
 });
 
+// ---- 自分自身 (whoami)：APIトークンから本人(user_id・会社・admin権限)を返す (#3360) ----
+// /masters/staff より前に登録する（パス衝突回避）。
+app.get('/staff/current', auth, async (req, res) => {
+  try { ok(res, await req.client.currentStaff()); }
+  catch (e) { fail(res, 500, 'API_ERROR', e.message); }
+});
+
 // ---- 社員マスタ（社員は読み取り専用、APIに new/edit/delete なし） ----
 app.get('/masters/staff', auth, async (req, res) => {
   try {

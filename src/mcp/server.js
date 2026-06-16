@@ -331,6 +331,11 @@ const TOOLS = [
     description: '複数社員の詳細を一括取得する。全社員のディレクトリ作成に最適。',
     inputSchema: { type: 'object', required: ['user_ids'], properties: { user_ids: { type: 'string', description: 'カンマ区切り' } } },
   },
+  {
+    name: 'staff_current',
+    description: '「自分は誰か」をAPIトークンから返す(whoami)。user_id・氏名・会社・user_type・is_admin(管理者かどうか) を取得する。',
+    inputSchema: { type: 'object', properties: {} },
+  },
 
   // ============ 顧客マスタ ============
   ...simpleMasterTools('customer', '顧客', 'customer_id', 'customer_ids'),
@@ -467,6 +472,7 @@ async function handleTool(name, args) {
     case 'master_staff':            return master.listStaff(client);
     case 'master_staff_info':       return master.getStaffInfo(client, args);
     case 'master_staff_info_multi': return master.getStaffInfoMulti(client, args);
+    case 'staff_current':           return client.currentStaff();
     // 顧客
     case 'customer_list':       return customer.list(client, args);
     case 'customer_info':       return customer.info(client, args);
