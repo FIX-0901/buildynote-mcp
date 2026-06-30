@@ -38,6 +38,63 @@ function flattenGanttNew(payload) {
   return out;
 }
 
+// --- 受注/発注担当者(supplier_user/order_user)の正規化と会社ID解決 ---
+// BUILDYNOTE本体仕様(RestApiController):
+//  (1) supplier_user の保存は supplier_company_id がある時だけ処理される（無いとエラーも出さず黙って捨てる）
+//  (2) 受信した supplier_user は is_array() でなければ空扱い（PHP配列展開 flattenGanttNew が必須）
+//  (3) 受注担当者に is_chief=1 が1人もいないと G003-004-017「受注会社の責任者が設定されていません」エラー
+// このため write 系では「正規化 → 責任者保証 → 会社ID解決 → 展開」を必ず通す。
+function isChiefValue(v) { return (v === true || v === 1 || v === '1') ? 1 : 0; }
+function hasUsers(arr) { return Array.isArray(arr) && arr.length > 0; }
+
+// [{user_id, is_chief}] を {user_id:文字列, is_chief:0/1} の配列へ正規化（is_chief は '0' を誤って真にしない）
+function normalizeUsers(arr) {
+  if (!Array.isArray(arr)) return arr;
+  return arr
+    .filter(u => u && u.user_id !== undefined && u.user_id !== null)
+    .map(u => ({ user_id: String(u.user_id), is_chief: isChiefValue(u.is_chief) }));
+}
+
+// 受注担当者に責任者が1人もいなければ先頭を責任者にする（G003-004-017回避）
+function ensureChief(arr) {
+  if (Array.isArray(arr) && arr.length > 0 && !arr.some(u => u.is_chief === 1)) arr[0].is_chief = 1;
+  return arr;
+}
+
+// 自社社員IDの集合を全ページ走査で取得（user_list は50件ページングのため）
+async function fetchInternalUserIds(client) {
+  const ids = new Set();
+  for (let page = 1; page <= 40; page++) {
+    const res = await client.call('user_list', { page, limit: 100 });
+    if (res && res.errors) break;
+    const list = (res && (res.list || res.data)) || (Array.isArray(res) ? res : []);
+    for (const s of list) {
+      const id = s && (s.id != null ? s.id : s.user_id);
+      if (id != null) ids.add(String(id));
+    }
+    if (!res || !res.nextPage || list.length === 0) break;
+  }
+  return ids;
+}
+
+// supplier_company_id を解決する。優先順位:
+//  ①明示値 → ②gantt_info の既存値 → ③受注担当者が全員自社社員なら自社会社ID → ④不可なら明確なエラー
+// （サイレントドロップを防ぐため、解決できなければ throw する）
+async function resolveSupplierCompany(client, { supplier_company_id, supplier_user, info }) {
+  if (supplier_company_id) return String(supplier_company_id);
+  if (info && info.supplier_company_id) return String(info.supplier_company_id);
+  const me = await client.call('staff_current');
+  const myCompany = me && me.company_id != null ? String(me.company_id) : null;
+  const internalIds = await fetchInternalUserIds(client);
+  const allInternal = hasUsers(supplier_user) && supplier_user.every(u => internalIds.has(String(u.user_id)));
+  if (allInternal && myCompany) return myCompany;
+  throw new Error(
+    'supplier_user を指定する場合は supplier_company_id が必須です。' +
+    '受注担当者に自社以外（協力会社）の人が含まれるため会社IDを自動補完できませんでした。' +
+    '自社担当なら staff_current の company_id、協力会社なら company_list で受注会社IDを調べて supplier_company_id を指定してください。'
+  );
+}
+
 // YYYY-MM-DD → YYYY-MM-DDT00:00:00（gantt_list は T付き形式が必須）
 function toGanttDatetime(s, endOfDay) {
   if (!s) return undefined;
@@ -223,8 +280,24 @@ function buildGanttNewPayload(params) {
   return flattenGanttNew(payload);
 }
 
+// gantt_new に supplier_user/order_user がある場合の共通前処理:
+// 正規化 → 受注会社ID解決(新規なので既存info無し) → 責任者保証。失敗時は throw（呼び出し側で握る）。
+async function prepareNewGanttSupplier(client, params) {
+  const p = { ...params };
+  if (hasUsers(p.supplier_user)) {
+    p.supplier_user = normalizeUsers(p.supplier_user);
+    p.supplier_company_id = await resolveSupplierCompany(client, {
+      supplier_company_id: p.supplier_company_id, supplier_user: p.supplier_user, info: null,
+    });
+    ensureChief(p.supplier_user);
+  }
+  if (hasUsers(p.order_user)) p.order_user = normalizeUsers(p.order_user);
+  return p;
+}
+
 async function createGantt(client, params) {
-  return client.call('gantt_new', buildGanttNewPayload(params));
+  const prepared = await prepareNewGanttSupplier(client, params);
+  return client.call('gantt_new', buildGanttNewPayload(prepared));
 }
 
 // 複数工程を一括登録する。工程表など多数の工程をまとめて作る用。
@@ -239,7 +312,8 @@ async function createGanttsMulti(client, { work_id, gantts } = {}) {
   for (let i = 0; i < gantts.length; i++) {
     const g = gantts[i];
     try {
-      const res = await client.call('gantt_new', buildGanttNewPayload({ work_id, ...g }));
+      const prepared = await prepareNewGanttSupplier(client, { work_id, ...g });
+      const res = await client.call('gantt_new', buildGanttNewPayload(prepared));
       if (res && (res.errors || res.result === false)) {
         failed.push({ index: i, name: g.name, error: res.errors || 'unknown' });
       } else {
@@ -261,25 +335,55 @@ async function createGanttsMulti(client, { work_id, gantts } = {}) {
 
 async function editGantt(client, { gantt_id, work_id, status, ...rest }) {
   // gantt_edit は work_id + schedule_id + status + category が必須。
-  // category が省略された場合は gantt_info から取得して補完する（read-modify-write）。
-  let resolvedCategory = rest.category;
-  if (!resolvedCategory) {
-    const info = await client.call('gantt_info', { schedule_id: gantt_id });
+  // 担当者(supplier_user/order_user)を正規化（責任者保証は会社ID解決後）。
+  if (hasUsers(rest.supplier_user)) rest.supplier_user = normalizeUsers(rest.supplier_user);
+  if (hasUsers(rest.order_user)) rest.order_user = normalizeUsers(rest.order_user);
+
+  // gantt_info を引く条件: category/名前/日付の補完、または受注会社IDの解決・既存担当者の保全が要るとき。
+  // read-modify-write: gantt_edit は受け取った値で上書きするため、明示されない supplier 系は
+  // 既存値を再送しないと消える。そのため supplier_user 未指定でも既存 info を引いて保全する。
+  const needInfo = !rest.category
+    || !rest.name || !rest.day_start || !rest.day_end
+    || (hasUsers(rest.supplier_user) && !rest.supplier_company_id)
+    || !hasUsers(rest.supplier_user);
+  let info = null;
+  if (needInfo) {
+    info = await client.call('gantt_info', { schedule_id: gantt_id });
     if (info.errors) return info;
-    // gantt_info はカテゴリ名を返すので数値に変換
-    resolvedCategory = CATEGORY_MAP[info.category] || info.category;
-    // 他の省略フィールドも補完（名前・日付は指定がなければ既存値を使う）
+  }
+
+  const resolvedCategory = rest.category
+    ? (CATEGORY_MAP[rest.category] || rest.category)
+    : (info ? (CATEGORY_MAP[info.category] || info.category) : undefined);
+  if (info) {
     if (!rest.name) rest.name = info.name;
     if (!rest.day_start) rest.day_start = (info.start_date || '').substring(0, 10);
     if (!rest.day_end) rest.day_end = (info.end_date || '').substring(0, 10);
   }
-  return client.call('gantt_edit', {
+
+  if (hasUsers(rest.supplier_user)) {
+    // 受注担当者を変更する: 会社IDを解決（①明示②既存③自社）し、責任者を保証する。
+    rest.supplier_company_id = await resolveSupplierCompany(client, {
+      supplier_company_id: rest.supplier_company_id, supplier_user: rest.supplier_user, info,
+    });
+    ensureChief(rest.supplier_user);
+  } else if (info && info.supplier_company_id) {
+    // 受注担当者は変更しない: 既存の受注会社・担当者を再送して消えないようにする。
+    if (!rest.supplier_company_id) rest.supplier_company_id = String(info.supplier_company_id);
+    if (!hasUsers(rest.supplier_user) && hasUsers(info.supplier_user)) {
+      rest.supplier_user = ensureChief(normalizeUsers(info.supplier_user));
+    }
+  }
+
+  const payload = {
     schedule_id: gantt_id,
     work_id,
     status: status || '1',
     category: resolvedCategory,
     ...rest,
-  });
+  };
+  // flattenGanttNew で supplier_user 等を PHP配列形式に展開（未展開だと is_array() false で黙って捨てられる）
+  return client.call('gantt_edit', flattenGanttNew(payload));
 }
 
 async function getGanttsMulti(client, { schedule_ids } = {}) {
@@ -317,6 +421,24 @@ async function editGanttsMulti(client, { work_id, status, gantts } = {}) {
   if (!status) throw new Error('status is required');
   if (!Array.isArray(gantts) || gantts.length === 0) {
     throw new Error('gantts (array of {schedule_id, ...}) is required');
+  }
+  // 受注会社IDの解決に既存値が要る item は gantt_info を一括取得（fetchGanttInfoMap）
+  const needIds = gantts
+    .filter(g => hasUsers(g.supplier_user) && !g.supplier_company_id && g.schedule_id)
+    .map(g => String(g.schedule_id));
+  const infoMap = needIds.length ? await fetchGanttInfoMap(client, needIds) : new Map();
+
+  for (const g of gantts) {
+    if (hasUsers(g.supplier_user)) {
+      g.supplier_user = normalizeUsers(g.supplier_user);
+      g.supplier_company_id = await resolveSupplierCompany(client, {
+        supplier_company_id: g.supplier_company_id,
+        supplier_user: g.supplier_user,
+        info: infoMap.get(String(g.schedule_id)),
+      });
+      ensureChief(g.supplier_user);
+    }
+    if (hasUsers(g.order_user)) g.order_user = normalizeUsers(g.order_user);
   }
   return client.call('gantts_edit', { work_id, status, ...flattenGantts(gantts) });
 }
@@ -439,4 +561,6 @@ async function copyGantts(client, params = {}) {
   };
 }
 
-module.exports = { listGantts, searchGantts, getGantt, getGanttsMulti, createGantt, createGanttsMulti, editGantt, editGanttsMulti, copyGantts };
+module.exports = { listGantts, searchGantts, getGantt, getGanttsMulti, createGantt, createGanttsMulti, editGantt, editGanttsMulti, copyGantts,
+  // テスト/再利用用に内部ヘルパも公開
+  normalizeUsers, ensureChief, hasUsers, resolveSupplierCompany, fetchInternalUserIds };
