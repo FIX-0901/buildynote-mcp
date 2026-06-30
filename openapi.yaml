@@ -287,6 +287,17 @@ paths:
                       name: { type: string }
                       day_start: { type: string }
                       day_end: { type: string }
+                      category: { type: string, description: '1=社内/2=工事/3=納材/4=検査' }
+                      supplier_company_id: { type: string, description: '受注会社ID。supplier_user指定時は必須（自社社員のみなら自動補完）' }
+                      supplier_user:
+                        type: array
+                        description: '受注担当者の配列。各要素 {user_id, is_chief}。責任者(is_chief=1)を1人以上（未指定なら先頭を自動責任者）。'
+                        items:
+                          type: object
+                          required: [user_id]
+                          properties:
+                            user_id: { type: string }
+                            is_chief: { type: string, description: '1=責任者' }
                       delete_flag: { type: string }
       responses:
         '200':
@@ -316,7 +327,25 @@ paths:
                 day_end: { type: string, format: date }
                 status: { type: string, description: '工程状態（1=公開保存, 2=下書き, 3=全体調整中, 4=停止中）。新規作成時は通常 1。必須' }
                 industry_type_id: { type: string }
-                supplier_company_id: { type: string }
+                supplier_company_id: { type: string, description: '受注会社ID。supplier_user指定時は必須（自社社員のみなら自動補完）' }
+                supplier_user:
+                  type: array
+                  description: '受注担当者の配列。各要素 {user_id, is_chief}。責任者(is_chief=1)を1人以上（未指定なら先頭を自動責任者）。'
+                  items:
+                    type: object
+                    required: [user_id]
+                    properties:
+                      user_id: { type: string }
+                      is_chief: { type: string, description: '1=責任者' }
+                order_user:
+                  type: array
+                  description: '発注担当者の配列。各要素 {user_id, is_chief}。'
+                  items:
+                    type: object
+                    required: [user_id]
+                    properties:
+                      user_id: { type: string }
+                      is_chief: { type: string, description: '1=責任者' }
                 report_type: { type: string }
       responses:
         '200':
@@ -366,6 +395,27 @@ paths:
                 name: { type: string }
                 day_start: { type: string, format: date }
                 day_end: { type: string, format: date }
+                category: { type: string, description: '1=社内/2=工事/3=納材/4=検査（省略時は既存値を維持）' }
+                industry_type_id: { type: string }
+                supplier_company_id: { type: string, description: '受注会社ID。supplier_user指定時は必須（自社社員のみなら自動補完）' }
+                supplier_user:
+                  type: array
+                  description: '受注担当者の配列。各要素 {user_id, is_chief}。責任者(is_chief=1)を1人以上（未指定なら先頭を自動責任者）。supplier_user未指定の編集では既存担当者は保全される。'
+                  items:
+                    type: object
+                    required: [user_id]
+                    properties:
+                      user_id: { type: string }
+                      is_chief: { type: string, description: '1=責任者' }
+                order_user:
+                  type: array
+                  description: '発注担当者の配列。各要素 {user_id, is_chief}。'
+                  items:
+                    type: object
+                    required: [user_id]
+                    properties:
+                      user_id: { type: string }
+                      is_chief: { type: string, description: '1=責任者' }
       responses:
         '200':
           description: 編集後の工程

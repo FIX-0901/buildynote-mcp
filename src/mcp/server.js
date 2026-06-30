@@ -91,6 +91,33 @@ function simpleMasterTools(toolPrefix, label, idField, idsField) {
   ];
 }
 
+// 受注担当者(supplier_user)/発注担当者(order_user) の配列スキーマ。
+// supplier_user は is_chief=1 の責任者を1人以上含める必要がある（無いと先頭が自動で責任者になる）。
+const SUPPLIER_USER_SCHEMA = {
+  type: 'array',
+  description: '受注担当者の配列。各要素 {user_id, is_chief}。指定する場合は supplier_company_id が必須で、責任者(is_chief=1)を1人以上含める（未指定なら先頭を責任者に自動設定）。自社社員のみなら supplier_company_id は自動補完される。',
+  items: {
+    type: 'object',
+    required: ['user_id'],
+    properties: {
+      user_id: { type: 'string' },
+      is_chief: { type: 'string', enum: ['0', '1'], description: '1=責任者' },
+    },
+  },
+};
+const ORDER_USER_SCHEMA = {
+  type: 'array',
+  description: '発注担当者の配列。各要素 {user_id, is_chief}。',
+  items: {
+    type: 'object',
+    required: ['user_id'],
+    properties: {
+      user_id: { type: 'string' },
+      is_chief: { type: 'string', enum: ['0', '1'], description: '1=責任者' },
+    },
+  },
+};
+
 const TOOLS = [
   // ============ 仕事 ============
   {
@@ -185,7 +212,7 @@ const TOOLS = [
   },
   {
     name: 'gantt_new',
-    description: '仕事に工程を新規作成する。category: 1=社内, 2=工事, 3=納材, 4=検査。',
+    description: '仕事に工程を新規作成する。category: 1=社内, 2=工事, 3=納材, 4=検査。受注担当者を入れるなら supplier_user に配列で指定（supplier_company_id・責任者is_chief=1 が必須。自社社員のみなら会社IDは自動補完）。',
     inputSchema: {
       type: 'object',
       required: ['work_id', 'category', 'name', 'day_start', 'day_end', 'status'],
@@ -197,14 +224,16 @@ const TOOLS = [
         day_end: { type: 'string', description: 'YYYY-MM-DD' },
         status: { type: 'string', description: '1=公開保存/2=下書き/3=全体調整中/4=停止中', enum: ['1', '2', '3', '4'] },
         industry_type_id: { type: 'string' },
-        supplier_company_id: { type: 'string' },
+        supplier_company_id: { type: 'string', description: '受注会社ID。supplier_user指定時は必須（未指定でも受注担当者が全員自社社員なら自動補完）。協力会社の場合は company_list で会社IDを調べて指定する。' },
+        supplier_user: SUPPLIER_USER_SCHEMA,
+        order_user: ORDER_USER_SCHEMA,
         report_type: { type: 'string', description: '報告種別（1=なし, 2=報告リスト, 3=スライダー, 4=カスタム）' },
       },
     },
   },
   {
     name: 'gantt_edit',
-    description: '工程を編集する。gantt_id と work_id は必須。',
+    description: '工程を編集する。gantt_id と work_id は必須。受注担当者を変えるなら supplier_user に配列で指定（supplier_company_id・責任者is_chief=1 が必須。自社社員のみなら会社IDは自動補完）。supplier_user 未指定の編集では既存の受注担当者は保全される。',
     inputSchema: {
       type: 'object',
       required: ['gantt_id', 'work_id'],
@@ -215,12 +244,17 @@ const TOOLS = [
         name: { type: 'string' },
         day_start: { type: 'string' },
         day_end: { type: 'string' },
+        category: { type: 'string', description: '1=社内/2=工事/3=納材/4=検査（省略時は既存値を維持）', enum: ['1', '2', '3', '4'] },
+        industry_type_id: { type: 'string' },
+        supplier_company_id: { type: 'string', description: '受注会社ID。supplier_user指定時は必須（未指定でも受注担当者が全員自社社員なら自動補完）。' },
+        supplier_user: SUPPLIER_USER_SCHEMA,
+        order_user: ORDER_USER_SCHEMA,
       },
     },
   },
   {
     name: 'gantt_edit_multi',
-    description: '複数工程を一括編集する。work_id・status・gantts配列が必須。各gantts要素はschedule_id等を持つ。',
+    description: '複数工程を一括編集する。work_id・status・gantts配列が必須。各gantts要素はschedule_id等を持つ。受注担当者を変えるなら各要素に supplier_user を指定（supplier_company_id・責任者is_chief=1 が必須。自社社員のみなら会社IDは自動補完）。',
     inputSchema: {
       type: 'object',
       required: ['work_id', 'status', 'gantts'],
@@ -236,6 +270,9 @@ const TOOLS = [
               name: { type: 'string' },
               day_start: { type: 'string' },
               day_end: { type: 'string' },
+              category: { type: 'string', enum: ['1', '2', '3', '4'] },
+              supplier_company_id: { type: 'string', description: '受注会社ID。supplier_user指定時は必須（自社社員のみなら自動補完）。' },
+              supplier_user: SUPPLIER_USER_SCHEMA,
               delete_flag: { type: 'string', description: '1で削除' },
             },
           },
