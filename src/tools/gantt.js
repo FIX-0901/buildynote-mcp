@@ -44,6 +44,29 @@ function flattenGanttNew(payload) {
 //  (2) 受信した supplier_user は is_array() でなければ空扱い（PHP配列展開 flattenGanttNew が必須）
 //  (3) 受注担当者に is_chief=1 が1人もいないと G003-004-017「受注会社の責任者が設定されていません」エラー
 // このため write 系では「正規化 → 責任者保証 → 会社ID解決 → 展開」を必ず通す。
+//
+// ⚠️【工程の役割ユーザーは全て同じサイレントドロップの罠を持つ】(ISSUE #3289 note_54205 の教訓)
+// BUILDYNOTE の工程(Schedule)には ScheduleUser で 5 種の役割ユーザーが紐づく:
+//   schedule_user_type: 1=受注(supplier) / 2=関係(other) / 3=実施(constructor) / 4=発注(order) / 5=承認(approval)
+// RestApiController の create_gantt / edit_gantt は、これらを次の形式で受け取る:
+//   ● is_array 配列で送らないと is_array()=false で【エラーも出さず空扱いで黙って破棄】されるフィールド（＝flatten必須・生渡し厳禁）:
+//       supplier_user   (create 15999 / edit 16846付近)
+//       constructor_user(create 16114 / edit 17564)  ← 実施会社担当者
+//       other_company   (create 16171 / edit 17652)  ← 関係会社（会社ではなくユーザー配列を渡す）
+//       approval_user   (create 16267 / edit 17788)  ← 検査承認者
+//     → client.call の querystring.stringify は key[i][k] 形式を作れないため、payload に載せる前に
+//       必ず flattenGanttNew を通すこと。editGantt/createGantt は末尾で payload 全体を flatten するので
+//       ...rest に載せれば自動展開される（＝flatten自体は既に安全。危険なのは下記の意味論ゲート）。
+//   ● スカラーで良いもの: constructor_company_id (create 16080 / edit 17527)
+// 意味論ゲート（知らないと嵌まる。flatten しても以下を満たさないと保存されない）:
+//   [実施会社=constructor] 3つ全て必須:
+//     (a) is_constructor=1 を併送（無いと constructor 系を丸ごと無視。別種のサイレントドロップ）
+//     (b) constructor_company_id 必須（無いと G003-005-019「実施会社が存在しません」）
+//     (c) constructor_user に is_chief=1 が1人必須（無いと G003-005-021「実施会社の責任者が設定されていません」）
+//   [関係会社=other_company] 会社IDパラメータ無し・is_chief不要。ユーザー配列だけ渡せば所属会社をDB逆引きする。
+// 現状 server.js が露出しているのは supplier_user / order_user のみ。constructor/other/approval を
+// 設定機能化する場合は、下記の supplier 用ヘルパ(normalizeUsers/ensureChief/resolveSupplierCompany)と
+// 同型の前処理(prepareConstructorUsers/prepareOtherCompany)を必ず結線し、editGantt では既存値保全も足すこと。
 function isChiefValue(v) { return (v === true || v === 1 || v === '1') ? 1 : 0; }
 function hasUsers(arr) { return Array.isArray(arr) && arr.length > 0; }
 
@@ -93,6 +116,52 @@ async function resolveSupplierCompany(client, { supplier_company_id, supplier_us
     '受注担当者に自社以外（協力会社）の人が含まれるため会社IDを自動補完できませんでした。' +
     '自社担当なら staff_current の company_id、協力会社なら company_list で受注会社IDを調べて supplier_company_id を指定してください。'
   );
+}
+
+// --- 実施会社(constructor)・関係会社(other_company) の write 前処理ヘルパ ---
+// ISSUE #3289 note_54205 と同型のサイレントドロップ予防。現状は server.js が露出していないため
+// 未結線だが、constructor/other を設定機能化する際は createGantt/editGantt の前処理でこれを呼ぶこと。
+// （露出前でも「土台」として置き、罠を1箇所に閉じ込める狙い。）
+
+// 会社IDを解決する汎用版。resolveSupplierCompany と同ロジックだが info のキーを差し替えられる。
+// 優先順位: ①明示値 → ②既存info[infoKey] → ③担当者が全員自社社員なら自社会社ID → ④不可なら明確なエラー。
+async function resolveRoleCompany(client, { company_id, users, info, infoKey, roleLabel }) {
+  if (company_id) return String(company_id);
+  if (info && info[infoKey]) return String(info[infoKey]);
+  const me = await client.call('staff_current');
+  const myCompany = me && me.company_id != null ? String(me.company_id) : null;
+  const internalIds = await fetchInternalUserIds(client);
+  const allInternal = hasUsers(users) && users.every(u => internalIds.has(String(u.user_id)));
+  if (allInternal && myCompany) return myCompany;
+  throw new Error(
+    `${roleLabel}の担当者を指定する場合は会社IDが必須です。` +
+    `担当者に自社以外（協力会社）の人が含まれるため会社IDを自動補完できませんでした。` +
+    `自社担当なら staff_current の company_id、協力会社なら company_list で会社IDを調べて指定してください。`
+  );
+}
+
+// 実施会社(constructor)の3ゲートを満たす payload 断片を作る。
+//  (a) is_constructor=1 併送 (b) constructor_company_id 必須 (c) is_chief=1 を1人保証。
+// 生の constructor_user は必ず normalizeUsers → ensureChief を通し、最終 flatten で PHP配列形式へ展開される。
+async function prepareConstructorUsers(client, { constructor_user, constructor_company_id, info }) {
+  if (!hasUsers(constructor_user)) return {};
+  const users = ensureChief(normalizeUsers(constructor_user));
+  const companyId = await resolveRoleCompany(client, {
+    company_id: constructor_company_id, users, info,
+    infoKey: 'constructor_company_id', roleLabel: '実施会社',
+  });
+  // is_constructor=1 を併送しないと BUILDYNOTE本体は constructor 系を丸ごと無視する（別種のサイレントドロップ）。
+  return { is_constructor: '1', constructor_company_id: companyId, constructor_user: users };
+}
+
+// 関係会社(other_company)の payload 断片を作る。会社ID不要・is_chief不要。ユーザー配列だけ正規化して返す。
+// （BUILDYNOTE本体が各ユーザーの所属会社をDB逆引きする。is_array ゲートは同じなので最終 flatten は必須。）
+function prepareOtherCompany({ other_company }) {
+  if (!hasUsers(other_company)) return {};
+  const users = other_company
+    .filter(u => u && u.user_id !== undefined && u.user_id !== null)
+    .map(u => ({ user_id: String(u.user_id) }));
+  return { other_company: users };
 }
 
 // YYYY-MM-DD → YYYY-MM-DDT00:00:00（gantt_list は T付き形式が必須）
@@ -280,8 +349,9 @@ function buildGanttNewPayload(params) {
   return flattenGanttNew(payload);
 }
 
-// gantt_new に supplier_user/order_user がある場合の共通前処理:
-// 正規化 → 受注会社ID解決(新規なので既存info無し) → 責任者保証。失敗時は throw（呼び出し側で握る）。
+// gantt_new に supplier_user/order_user/constructor_user/other_company がある場合の共通前処理:
+// 正規化 → 会社ID解決(新規なので既存info無し) → 責任者保証。失敗時は throw（呼び出し側で握る）。
+// constructor/other も supplier と同じ is_array サイレントドロップの罠を持つため、ここで必ず正規化する。
 async function prepareNewGanttSupplier(client, params) {
   const p = { ...params };
   if (hasUsers(p.supplier_user)) {
@@ -292,6 +362,14 @@ async function prepareNewGanttSupplier(client, params) {
     ensureChief(p.supplier_user);
   }
   if (hasUsers(p.order_user)) p.order_user = normalizeUsers(p.order_user);
+  // 実施会社(constructor): is_constructor=1 併送・会社ID解決・責任者保証をまとめて付与
+  if (hasUsers(p.constructor_user)) {
+    Object.assign(p, await prepareConstructorUsers(client, {
+      constructor_user: p.constructor_user, constructor_company_id: p.constructor_company_id, info: null,
+    }));
+  }
+  // 関係会社(other_company): 会社ID/責任者不要。ユーザー配列を正規化するだけ
+  if (hasUsers(p.other_company)) Object.assign(p, prepareOtherCompany({ other_company: p.other_company }));
   return p;
 }
 
@@ -342,6 +420,9 @@ async function editGantt(client, { gantt_id, work_id, status, ...rest }) {
   // gantt_info を引く条件: category/名前/日付の補完、または受注会社IDの解決・既存担当者の保全が要るとき。
   // read-modify-write: gantt_edit は受け取った値で上書きするため、明示されない supplier 系は
   // 既存値を再送しないと消える。そのため supplier_user 未指定でも既存 info を引いて保全する。
+  // ⚠️ constructor(実施会社)/other(関係会社) を設定機能化する際は、ここに supplier と同じ既存値保全を
+  //    追加すること（prepareConstructorUsers/prepareOtherCompany を結線し、未変更時は info から再送）。
+  //    現状はこれらを送らないため BUILDYNOTE本体の既存値フォールバック($usr3/$usr2)で温存されている。
   const needInfo = !rest.category
     || !rest.name || !rest.day_start || !rest.day_end
     || (hasUsers(rest.supplier_user) && !rest.supplier_company_id)
@@ -374,6 +455,16 @@ async function editGantt(client, { gantt_id, work_id, status, ...rest }) {
       rest.supplier_user = ensureChief(normalizeUsers(info.supplier_user));
     }
   }
+
+  // 実施会社(constructor)/関係会社(other_company) は「明示された時だけ上書き」。
+  // 未指定なら payload に載せず、BUILDYNOTE本体の既存値フォールバック($usr3/$usr2)で温存する
+  //（partial に送ると is_constructor/会社IDの分岐で既存が消えうるため、正規化して全部揃えて送る時のみ触る）。
+  if (hasUsers(rest.constructor_user)) {
+    Object.assign(rest, await prepareConstructorUsers(client, {
+      constructor_user: rest.constructor_user, constructor_company_id: rest.constructor_company_id, info,
+    }));
+  }
+  if (hasUsers(rest.other_company)) Object.assign(rest, prepareOtherCompany({ other_company: rest.other_company }));
 
   const payload = {
     schedule_id: gantt_id,
@@ -563,4 +654,6 @@ async function copyGantts(client, params = {}) {
 
 module.exports = { listGantts, searchGantts, getGantt, getGanttsMulti, createGantt, createGanttsMulti, editGantt, editGanttsMulti, copyGantts,
   // テスト/再利用用に内部ヘルパも公開
-  normalizeUsers, ensureChief, hasUsers, resolveSupplierCompany, fetchInternalUserIds };
+  normalizeUsers, ensureChief, hasUsers, resolveSupplierCompany, fetchInternalUserIds,
+  // 実施会社/関係会社の設定機能化に向けた前処理ヘルパ（結線待ちの土台。#3289 note_54205 予防）
+  resolveRoleCompany, prepareConstructorUsers, prepareOtherCompany };

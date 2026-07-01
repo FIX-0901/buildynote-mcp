@@ -346,6 +346,24 @@ paths:
                     properties:
                       user_id: { type: string }
                       is_chief: { type: string, description: '1=責任者' }
+                constructor_company_id: { type: string, description: '実施会社ID。constructor_user指定時に使う（自社社員のみなら自動補完）' }
+                constructor_user:
+                  type: array
+                  description: '実施会社の担当者の配列。各要素 {user_id, is_chief}。責任者(is_chief=1)を1人以上（未指定なら先頭を自動責任者）。指定すると is_constructor=1 が自動付与される。'
+                  items:
+                    type: object
+                    required: [user_id]
+                    properties:
+                      user_id: { type: string }
+                      is_chief: { type: string, description: '1=責任者' }
+                other_company:
+                  type: array
+                  description: '関係会社の担当者の配列。各要素 {user_id}。会社ID・責任者の指定は不要（所属会社は自動判定）。'
+                  items:
+                    type: object
+                    required: [user_id]
+                    properties:
+                      user_id: { type: string }
                 report_type: { type: string }
       responses:
         '200':
@@ -416,6 +434,24 @@ paths:
                     properties:
                       user_id: { type: string }
                       is_chief: { type: string, description: '1=責任者' }
+                constructor_company_id: { type: string, description: '実施会社ID。constructor_user指定時に使う（自社社員のみなら自動補完）' }
+                constructor_user:
+                  type: array
+                  description: '実施会社の担当者の配列。各要素 {user_id, is_chief}。責任者(is_chief=1)を1人以上（未指定なら先頭を自動責任者）。指定すると is_constructor=1 が自動付与される。未指定の編集では既存の実施会社は保全される。'
+                  items:
+                    type: object
+                    required: [user_id]
+                    properties:
+                      user_id: { type: string }
+                      is_chief: { type: string, description: '1=責任者' }
+                other_company:
+                  type: array
+                  description: '関係会社の担当者の配列。各要素 {user_id}。会社ID・責任者の指定は不要（所属会社は自動判定）。未指定の編集では既存の関係会社は保全される。'
+                  items:
+                    type: object
+                    required: [user_id]
+                    properties:
+                      user_id: { type: string }
       responses:
         '200':
           description: 編集後の工程

@@ -117,6 +117,32 @@ const ORDER_USER_SCHEMA = {
     },
   },
 };
+// 実施会社(constructor)の担当者配列。supplier と同じく責任者(is_chief=1)が1人必須（未指定なら先頭を自動設定）。
+// constructor_company_id は自社社員のみなら自動補完される。指定すると is_constructor=1 が自動付与される。
+const CONSTRUCTOR_USER_SCHEMA = {
+  type: 'array',
+  description: '実施会社の担当者の配列。各要素 {user_id, is_chief}。constructor_company_id が必須（自社社員のみなら自動補完）。責任者(is_chief=1)を1人以上含める（未指定なら先頭を自動設定）。指定すると is_constructor=1 が自動で付く。',
+  items: {
+    type: 'object',
+    required: ['user_id'],
+    properties: {
+      user_id: { type: 'string' },
+      is_chief: { type: 'string', enum: ['0', '1'], description: '1=責任者' },
+    },
+  },
+};
+// 関係会社(other_company)。会社IDや責任者は不要で、ユーザー配列だけ渡す（所属会社はBN本体がDB逆引きする）。
+const OTHER_COMPANY_SCHEMA = {
+  type: 'array',
+  description: '関係会社の担当者の配列。各要素 {user_id}。会社ID・責任者の指定は不要（所属会社は自動判定）。',
+  items: {
+    type: 'object',
+    required: ['user_id'],
+    properties: {
+      user_id: { type: 'string' },
+    },
+  },
+};
 
 const TOOLS = [
   // ============ 仕事 ============
@@ -227,13 +253,16 @@ const TOOLS = [
         supplier_company_id: { type: 'string', description: '受注会社ID。supplier_user指定時は必須（未指定でも受注担当者が全員自社社員なら自動補完）。協力会社の場合は company_list で会社IDを調べて指定する。' },
         supplier_user: SUPPLIER_USER_SCHEMA,
         order_user: ORDER_USER_SCHEMA,
+        constructor_company_id: { type: 'string', description: '実施会社ID。constructor_user指定時に使う（未指定でも担当者が全員自社社員なら自動補完）。' },
+        constructor_user: CONSTRUCTOR_USER_SCHEMA,
+        other_company: OTHER_COMPANY_SCHEMA,
         report_type: { type: 'string', description: '報告種別（1=なし, 2=報告リスト, 3=スライダー, 4=カスタム）' },
       },
     },
   },
   {
     name: 'gantt_edit',
-    description: '工程を編集する。gantt_id と work_id は必須。受注担当者を変えるなら supplier_user に配列で指定（supplier_company_id・責任者is_chief=1 が必須。自社社員のみなら会社IDは自動補完）。supplier_user 未指定の編集では既存の受注担当者は保全される。',
+    description: '工程を編集する。gantt_id と work_id は必須。受注担当者を変えるなら supplier_user、実施会社を変えるなら constructor_user、関係会社を変えるなら other_company に配列で指定（いずれも責任者is_chief=1 は自動保証。自社社員のみなら会社IDは自動補完）。これらを指定しない編集では既存値が保全される。',
     inputSchema: {
       type: 'object',
       required: ['gantt_id', 'work_id'],
@@ -249,6 +278,9 @@ const TOOLS = [
         supplier_company_id: { type: 'string', description: '受注会社ID。supplier_user指定時は必須（未指定でも受注担当者が全員自社社員なら自動補完）。' },
         supplier_user: SUPPLIER_USER_SCHEMA,
         order_user: ORDER_USER_SCHEMA,
+        constructor_company_id: { type: 'string', description: '実施会社ID。constructor_user指定時に使う（未指定でも担当者が全員自社社員なら自動補完）。' },
+        constructor_user: CONSTRUCTOR_USER_SCHEMA,
+        other_company: OTHER_COMPANY_SCHEMA,
       },
     },
   },
