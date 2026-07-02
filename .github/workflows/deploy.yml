@@ -1,0 +1,37 @@
+name: Deploy to ECS (Test)
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-1
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image to ECR
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            -t 101529692870.dkr.ecr.ap-northeast-1.amazonaws.com/buildynote-mcp:latest \
+            . --push
+
+      - name: Deploy to ECS
+        run: |
+          aws ecs update-service \
+            --cluster buildynote-mcp-cluster \
+            --service buildynote-mcp \
+            --force-new-deployment \
+            --region ap-northeast-1

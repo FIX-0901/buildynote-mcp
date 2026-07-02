@@ -11,6 +11,10 @@ const department = require('../tools/department');
 const position = require('../tools/position');
 const propertyType = require('../tools/propertyType');
 const company = require('../tools/company');
+const { Server } = require('@modelcontextprotocol/sdk/server/index.js');
+const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
+const { CallToolRequestSchema, ListToolsRequestSchema } = require('@modelcontextprotocol/sdk/types.js');
+const { TOOLS, handleTool } = require('../mcp/tools');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -19,7 +23,7 @@ app.use(express.json());
 app.use((_req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Api-Token');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Api-Token, Authorization');
   next();
 });
 app.options('*', (_req, res) => res.sendStatus(204));
@@ -247,6 +251,48 @@ mountSimpleMaster('/masters/departments', department, 'department_id', 'departme
 mountSimpleMaster('/masters/positions', position, 'position_id', 'position_ids');
 mountSimpleMaster('/masters/property-types', propertyType, 'property_type_id', 'property_type_ids');
 mountSimpleMaster('/masters/companies', company, 'company_id', 'company_ids');
+
+// ---- MCP Streamable HTTP エンドポイント ----
+function createMcpServer(client) {
+  const mcpServer = new Server(
+    { name: 'buildynote-mcp', version: '1.1.0' },
+    { capabilities: { tools: {} } }
+  );
+  mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
+  mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const { name, arguments: args } = request.params;
+    try {
+      const result = await handleTool(client, name, args || {});
+      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    } catch (error) {
+      return { content: [{ type: 'text', text: `Error: ${error.message}` }], isError: true };
+    }
+  });
+  return mcpServer;
+}
+
+async function handleMcpRequest(req, res) {
+  const authHeader = req.headers['authorization'];
+  const token = (authHeader && authHeader.startsWith('Bearer '))
+    ? authHeader.slice(7)
+    : req.headers['x-api-token'];
+  if (!token) {
+    return res.status(401).json({
+      jsonrpc: '2.0',
+      error: { code: -32001, message: 'Authorization required: set Authorization: Bearer <BUILDYNOTE_API_TOKEN>' },
+      id: null,
+    });
+  }
+  const client = new BuildynoteClient(token);
+  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+  const mcpServer = createMcpServer(client);
+  await mcpServer.connect(transport);
+  await transport.handleRequest(req, res, req.body);
+}
+
+app.post('/mcp', handleMcpRequest);
+app.get('/mcp', handleMcpRequest);
+app.delete('/mcp', (_req, res) => res.status(405).end());
 
 app.use((_req, res) => fail(res, 404, 'NOT_FOUND', 'Endpoint not found'));
 
